@@ -97,6 +97,13 @@ escribe otra. Mantén abierta la ventana: `Ctrl+C` apaga el controlador y el tú
 - Salud: <http://127.0.0.1:8080/healthz>
 - Preparación: <http://127.0.0.1:8080/readyz>
 
+## Conectar desde ChatGPT.com
+
+Consulta el tutorial [Conectar Secure MCP Local Guard con
+ChatGPT.com](TUTORIAL-CHATGPT.md). Explica paso a paso cómo crear la app en modo
+desarrollador, seleccionar el túnel, probar primero el acceso de solo lectura,
+aprobar una modificación y solucionar problemas de conexión.
+
 ## Inicio con Windows
 
 Después de iniciar manualmente al menos una vez:
@@ -150,6 +157,7 @@ de aprobaciones.
 - `enable-autostart.ps1` y `disable-autostart.ps1`: inicio con Windows.
 - `SECURITY.md`: política de seguridad y divulgación responsable.
 - `SECURITY-AUDIT.md`: última auditoría y riesgos residuales conocidos.
+- `TUTORIAL-CHATGPT.md`: conexión, prueba y desconexión desde ChatGPT.com.
 
 ## Publicación
 
