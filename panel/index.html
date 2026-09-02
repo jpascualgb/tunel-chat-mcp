@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Secure MCP Tunnel</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2 4 5.5v5.7c0 5.1 3.4 9.3 8 10.8 4.6-1.5 8-5.7 8-10.8V5.5L12 2Z"/><rect x="9" y="10.5" width="6" height="5.5" rx="1"/><path d="M10.5 10.5V9a1.5 1.5 0 0 1 3 0v1.5"/></svg></span>
+        <div><h1>Secure MCP Tunnel</h1><p data-i18n="localControl">Centro de seguridad local</p></div>
+      </div>
+      <div class="language" aria-label="Language"><button type="button" data-language="es" class="active">ES</button><span>/</span><button type="button" data-language="en">EN</button></div>
+    </header>
+
+    <main>
+      <section class="status-band" aria-live="polite">
+        <div class="status-summary"><span class="status-icon"></span><div><h2 id="statusTitle">Conectando…</h2><p id="statusDetail">Comprobando el estado</p></div></div>
+        <div class="workspace"><span data-i18n="authorizedWorkspace">Perfil y espacio autorizados</span><strong id="profileName">—</strong><small id="workspacePath">—</small></div>
+        <div class="connection-facts"><div><span data-i18n="lastMcp">Última actividad MCP</span><strong id="lastMcp">—</strong></div><div><span data-i18n="latency">Respuesta local</span><strong id="latency">—</strong></div><div><span data-i18n="uptime">Tiempo activo</span><strong id="uptime">—</strong></div></div>
+      </section>
+
+      <div class="dashboard-grid">
+        <section class="panel permissions-panel span-2">
+          <div class="section-heading split-heading"><div><h2 data-i18n="filePermissions">Permisos de archivos</h2><p data-i18n="permissionsHelp">Actívalos de forma temporal o sin límite de tiempo.</p></div><label class="field compact"><span data-i18n="activationDuration">Duración al activar</span><select id="permissionDuration"><option value="10">10 min</option><option value="30">30 min</option><option value="60">60 min</option><option value="unlimited" selected data-i18n="unlimited">Sin límite</option></select></label></div>
+          <div id="permissionList" class="permission-list"></div>
+        </section>
+
+        <section class="panel controls-panel">
+          <div class="section-heading"><h2 data-i18n="tunnelControl">Control del túnel</h2><p data-i18n="controlHelp">Inicia, detén o reinicia esta conexión.</p></div>
+          <div class="control-actions"><button id="startButton" class="action-button secondary"><span>▶</span><span data-i18n="start">Iniciar</span></button><button id="stopButton" class="action-button danger"><span>⏻</span><span data-i18n="stop">Apagar</span></button><button id="restartButton" class="action-button primary"><span>↻</span><span data-i18n="restart">Reiniciar</span></button></div>
+          <div class="setting-row inset"><div><strong data-i18n="windowsStart">Iniciar con Windows</strong><span data-i18n="windowsStartHelp">Arranca el túnel al iniciar sesión.</span></div><label class="switch"><input id="autostartToggle" type="checkbox"><span class="switch-track"></span></label></div>
+        </section>
+
+        <section class="panel security-panel span-2">
+          <div class="section-heading"><h2 data-i18n="securityMode">Seguridad y autonomía</h2><p data-i18n="securityHelp">Decide cuánto control conservar antes de cada cambio.</p></div>
+          <div class="setting-list"><div class="setting-row"><div><strong data-i18n="approvalTitle">Aprobar cada modificación</strong><span data-i18n="approvalHelp">Muestra el archivo y una vista previa antes de crear, modificar o eliminar.</span></div><label class="switch"><input id="approvalToggle" type="checkbox"><span class="switch-track"></span></label></div><div id="autonomousWarning" class="warning-box" hidden><strong data-i18n="autonomousTitle">Modo autónomo activo</strong><span data-i18n="autonomousHelp">La IA podrá realizar todos los cambios permitidos sin pedir aprobación individual.</span></div><div class="setting-row"><div><strong data-i18n="sensitiveTitle">Proteger archivos sensibles</strong><span data-i18n="sensitiveHelp">Bloquea .env, claves, credenciales, .git y enlaces que salgan del espacio autorizado.</span></div><label class="switch"><input id="sensitiveToggle" type="checkbox"><span class="switch-track"></span></label></div></div>
+        </section>
+
+        <section class="panel approvals-panel span-2">
+          <div class="section-heading split-heading"><div><h2 data-i18n="pendingApprovals">Aprobaciones pendientes</h2><p data-i18n="approvalsHelp">Revisa el antes y después; cada aprobación solo sirve una vez.</p></div><span id="approvalCount" class="badge">0</span></div>
+          <div id="approvalList" class="approval-list"></div>
+        </section>
+
+        <section class="panel backup-panel">
+          <div class="section-heading"><h2 data-i18n="backups">Copias y recuperación</h2><p data-i18n="backupsHelp">Conserva versiones previas y recupera el último cambio.</p></div>
+          <div class="setting-list compact-list"><div class="setting-row"><div><strong data-i18n="createBackups">Crear copias automáticas</strong><span id="backupSummary">—</span></div><label class="switch"><input id="backupToggle" type="checkbox"><span class="switch-track"></span></label></div><label class="field padded"><span data-i18n="retention">Eliminar cada copia después de</span><select id="backupRetention"><option value="15">15 días</option><option value="30">30 días</option><option value="unlimited" data-i18n="keepForever">No eliminar automáticamente</option></select></label></div>
+          <div class="inline-actions"><button id="restoreBackup" class="button secondary" data-i18n="undoModification">Deshacer última modificación</button><button id="restoreTrash" class="button secondary" data-i18n="restoreDeleted">Restaurar último eliminado</button></div>
+        </section>
+
+        <section class="panel profiles-panel">
+          <div class="section-heading"><h2 data-i18n="profiles">Perfiles de carpetas</h2><p data-i18n="profilesHelp">Cada perfil aísla permisos, aprobaciones y copias; al cambiar, el túnel se reinicia.</p></div>
+          <div class="profile-controls padded"><label class="field"><span data-i18n="activeProfile">Perfil activo</span><select id="profileSelect"></select></label><button id="deleteProfile" class="text-button danger-text" data-i18n="deleteProfile">Eliminar perfil seleccionado</button></div>
+          <form id="profileForm" class="profile-form padded"><label class="field"><span data-i18n="profileNameLabel">Nombre</span><input id="newProfileName" required maxlength="60" placeholder="Trabajo"></label><label class="field"><span data-i18n="folderPath">Ruta completa de la carpeta</span><input id="newProfilePath" required placeholder="C:\Users\…"></label><button class="button primary" type="submit" data-i18n="addProfile">Añadir perfil</button></form>
+        </section>
+      </div>
+
+      <section class="activity-section"><div class="section-heading activity-heading"><div><h2 data-i18n="auditLog">Registro de auditoría</h2><p data-i18n="auditHelp">Acciones, rutas, resultado y origen de cada operación.</p></div><button id="refreshButton" class="text-button" data-i18n="refresh">Actualizar</button></div><div class="activity-table-wrap"><table><thead><tr><th data-i18n="date">Fecha</th><th data-i18n="source">Origen</th><th data-i18n="action">Acción</th><th data-i18n="file">Archivo / detalle</th><th data-i18n="result">Resultado</th></tr></thead><tbody id="activityList"></tbody></table></div></section>
+    </main>
+
+    <footer><span>🛡</span><span data-i18n="localOnly">Solo accesible desde este PC · 127.0.0.1</span><a href="http://127.0.0.1:8082/ui" target="_blank" rel="noreferrer" data-i18n="technicalPanel">Panel técnico</a></footer>
+    <div id="modalBackdrop" class="modal-backdrop" hidden><div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><button id="modalClose" class="modal-close" aria-label="Close">×</button><h2 id="modalTitle"></h2><p id="modalBody"></p><div id="modalSummary" class="modal-summary" hidden></div><div class="modal-actions"><button id="modalCancel" class="button secondary" data-i18n="cancel">Cancelar</button><button id="modalConfirm" class="button primary"></button></div></div></div>
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

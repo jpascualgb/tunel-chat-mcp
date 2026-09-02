@@ -1,0 +1,19 @@
+{
+  "name": "secure-mcp-local-guard",
+  "version": "3.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "panel": "node control-panel.mjs",
+    "test": "node test-server.mjs && node test-control-panel.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.4",
+    "zod": "^3.25.76"
+  }
+}

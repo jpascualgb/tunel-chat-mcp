@@ -1,0 +1,443 @@
+import fs from "node:fs/promises";
+import http from "node:http";
+import os from "node:os";
+import path from "node:path";
+import { createHash, randomBytes } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { execFile as execFileCallback, spawn } from "node:child_process";
+import { promisify } from "node:util";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+  appendActivity,
+  createProfile,
+  decideApproval,
+  effectivePermissions,
+  permissionNames,
+  pathsOverlap,
+  profileDataPaths,
+  readApprovals,
+  readProfiles,
+  readSettings,
+  recentActivity,
+  updatePermission,
+  validateBackupMetadata,
+  validateSafeRelativePath,
+  workspaceFingerprint,
+  writeProfiles,
+  writeSettings,
+} from "./secure-store.mjs";
+
+const execFile = promisify(execFileCallback);
+const projectRoot = path.dirname(fileURLToPath(import.meta.url));
+const panelRoot = path.join(projectRoot, "panel");
+const defaultDataRoot = process.env.MCP_TUNNEL_DATA_ROOT || path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "OpenAI-Secure-MCP-Tunnel");
+const defaultClientPath = path.join(projectRoot, "vendor", "tunnel-client", "tunnel-client.exe");
+const autostartTaskName = "OpenAI Secure MCP Tunnel - PC personal";
+
+function jsonResponse(response, status, payload) {
+  response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
+  response.end(JSON.stringify(payload));
+}
+
+async function readJsonBody(request) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of request) {
+    size += chunk.length;
+    if (size > 128 * 1024) throw new Error("Solicitud demasiado grande.");
+    chunks.push(chunk);
+  }
+  return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+}
+
+async function sha256File(filePath) {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(filePath)) hash.update(chunk);
+  return hash.digest("hex");
+}
+
+async function listBackups(backupsRoot, binding) {
+  try {
+    const items = [];
+    for (const entry of await fs.readdir(backupsRoot, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+      try {
+        const metadata = JSON.parse(await fs.readFile(path.join(backupsRoot, entry.name), "utf8"));
+        validateBackupMetadata(metadata, binding);
+        items.push(metadata);
+      } catch {}
+    }
+    return items.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  } catch { return []; }
+}
+
+async function cleanupExpiredBackups(backupsRoot, retentionDays, binding) {
+  if (!retentionDays) return 0;
+  const cutoff = Date.now() - retentionDays * 86_400_000;
+  let removed = 0;
+  for (const metadata of await listBackups(backupsRoot, binding)) {
+    if (Date.parse(metadata.createdAt) >= cutoff) continue;
+    const validated = validateBackupMetadata(metadata, binding);
+    await fs.rm(validated.backupPath, { force: true });
+    await fs.rm(validated.metadataPath, { force: true });
+    removed += 1;
+  }
+  return removed;
+}
+
+async function validateWorkspace(input, protectedDataRoot = defaultDataRoot) {
+  if (typeof input !== "string" || !input.trim()) throw new Error("Indica una ruta de carpeta valida.");
+  const workspace = await fs.realpath(input.trim().replace(/^"|"$/g, ""));
+  if (!(await fs.stat(workspace)).isDirectory()) throw new Error("La ruta no es una carpeta.");
+  if (path.parse(workspace).root.toLowerCase() === workspace.replace(/[\\/]$/, "").toLowerCase()) throw new Error("No se permite autorizar una unidad completa.");
+  if (pathsOverlap(workspace, projectRoot)) throw new Error("No se puede autorizar la carpeta del tunel, una carpeta superior ni una carpeta interior.");
+  if (pathsOverlap(workspace, protectedDataRoot)) throw new Error("No se puede autorizar la carpeta que contiene los datos privados del tunel ni una carpeta superior.");
+  const windowsRoot = process.env.SystemRoot;
+  if (windowsRoot && pathsOverlap(workspace, windowsRoot)) throw new Error("No se puede autorizar la carpeta del sistema de Windows.");
+  return workspace;
+}
+
+export async function createControlPanel(options = {}) {
+  const host = options.host || "127.0.0.1";
+  const port = options.port ?? Number(process.env.CONTROL_PANEL_PORT || 8080);
+  const tunnelHealthUrl = options.tunnelHealthUrl || "http://127.0.0.1:8082";
+  const dataRoot = options.dataRoot || defaultDataRoot;
+  const activityPath = options.activityPath || path.join(dataRoot, "activity.jsonl");
+  const profilesPath = options.profilesPath || path.join(dataRoot, "profiles.json");
+  const clientPath = options.clientPath || defaultClientPath;
+  const testMode = options.testMode === true;
+  const token = randomBytes(24).toString("hex");
+  let tunnelProcess = null;
+  let tunnelStartedAt = null;
+  let testAutostart = false;
+
+  async function log(action, details = {}) {
+    await appendActivity(activityPath, { source: "panel", action, ...details });
+  }
+
+  async function profiles() {
+    return readProfiles(profilesPath, process.env.MCP_WORKSPACE_ROOT || null);
+  }
+
+  async function activeProfile() {
+    const saved = await profiles();
+    return saved.profiles.find((profile) => profile.id === saved.activeProfileId) || null;
+  }
+
+  async function activeContext() {
+    const profile = await activeProfile();
+    if (!profile) throw new Error("No hay ningun perfil de carpeta configurado.");
+    const workspace = await validateWorkspace(profile.workspace, dataRoot);
+    const paths = profileDataPaths(dataRoot, profile);
+    const fingerprint = workspaceFingerprint(workspace);
+    return {
+      profile,
+      workspace,
+      fingerprint,
+      ...paths,
+      binding: { profileId: profile.id, workspaceFingerprint: fingerprint, backupsRoot: paths.backupsRoot },
+    };
+  }
+
+  async function readyStatus() {
+    if (!tunnelProcess) return { ready: false, latencyMs: null };
+    if (testMode) return { ready: true, latencyMs: 1 };
+    const started = performance.now();
+    try {
+      const result = await fetch(`${tunnelHealthUrl}/readyz`, { signal: AbortSignal.timeout(1200) });
+      return { ready: result.ok, latencyMs: Math.round(performance.now() - started) };
+    } catch { return { ready: false, latencyMs: null }; }
+  }
+
+  async function startTunnel() {
+    if (tunnelProcess) return { changed: false };
+    const context = await activeContext();
+    if (testMode) {
+      tunnelProcess = { pid: 1, kill() {} };
+      tunnelStartedAt = new Date().toISOString();
+      await log("tunnel_start", { profileId: context.profile.id, workspaceFingerprint: context.fingerprint });
+      return { changed: true };
+    }
+    await fs.access(clientPath);
+    tunnelProcess = spawn(clientPath, ["run", "--profile", "pc-personal", "--health.listen-addr", "127.0.0.1:8082"], {
+      cwd: projectRoot,
+      env: {
+        ...process.env,
+        MCP_WORKSPACE_ROOT: context.workspace,
+        MCP_PROFILE_ID: context.profile.id,
+        MCP_SETTINGS_PATH: context.settingsPath,
+        MCP_PERMISSIONS_PATH: context.settingsPath,
+        MCP_ACTIVITY_PATH: activityPath,
+        MCP_APPROVALS_PATH: context.approvalsPath,
+        MCP_BACKUPS_ROOT: context.backupsRoot,
+        MCP_CONTROL_ROOT: projectRoot,
+        MCP_CONTROL_DATA_ROOT: dataRoot,
+      },
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    tunnelStartedAt = new Date().toISOString();
+    const processReference = tunnelProcess;
+    processReference.stdout.on("data", (chunk) => process.stdout.write(chunk));
+    processReference.stderr.on("data", (chunk) => process.stderr.write(chunk));
+    processReference.once("exit", async (code) => {
+      if (tunnelProcess === processReference) tunnelProcess = null;
+      await log("tunnel_exit", { code }).catch(() => {});
+    });
+    await log("tunnel_start", { pid: processReference.pid, profileId: context.profile.id, workspaceFingerprint: context.fingerprint });
+    return { changed: true };
+  }
+
+  async function stopTunnel() {
+    if (!tunnelProcess) return { changed: false };
+    const processReference = tunnelProcess;
+    if (testMode) {
+      tunnelProcess = null;
+      await log("tunnel_stop");
+      return { changed: true };
+    }
+    const exited = new Promise((resolve) => processReference.once("exit", resolve));
+    processReference.kill();
+    await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 5000))]);
+    if (tunnelProcess === processReference) { processReference.kill("SIGKILL"); tunnelProcess = null; }
+    await log("tunnel_stop");
+    return { changed: true };
+  }
+
+  async function restartTunnel() {
+    await stopTunnel();
+    await startTunnel();
+    await log("tunnel_restart");
+    return { changed: true };
+  }
+
+  async function autostartEnabled() {
+    if (testMode) return testAutostart;
+    try {
+      const { stdout } = await execFile("powershell.exe", ["-NoProfile", "-Command", `(Get-ScheduledTask -TaskName '${autostartTaskName}' -ErrorAction SilentlyContinue) -ne $null`], { windowsHide: true });
+      return stdout.trim().toLowerCase() === "true";
+    } catch { return false; }
+  }
+
+  async function setAutostart(value) {
+    if (testMode) { testAutostart = value; return; }
+    const script = path.join(projectRoot, value ? "enable-autostart.ps1" : "disable-autostart.ps1");
+    await execFile("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script], { cwd: projectRoot, windowsHide: true });
+    await log("autostart_change", { value });
+  }
+
+  async function restoreLatestBackup() {
+    const context = await activeContext();
+    const items = await listBackups(context.backupsRoot, context.binding);
+    const latest = items[0];
+    if (!latest) throw new Error("No hay copias de seguridad disponibles.");
+    const validated = validateBackupMetadata(latest, context.binding);
+    if (await sha256File(validated.backupPath) !== latest.sha256) throw new Error("La copia de seguridad no supera la verificacion de integridad.");
+    validateSafeRelativePath(latest.originalPath);
+    const destination = path.resolve(context.workspace, latest.originalPath);
+    const relative = path.relative(context.workspace, destination);
+    if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("La copia no pertenece al perfil activo.");
+    await fs.mkdir(path.dirname(destination), { recursive: true });
+    await fs.copyFile(validated.backupPath, destination);
+    await log("backup_restored", { profileId: context.profile.id, path: latest.originalPath, backupId: latest.id });
+    return latest;
+  }
+
+  async function latestTrashItem() {
+    const context = await activeContext().catch(() => null);
+    if (!context) return null;
+    const trashRoot = path.join(context.workspace, ".mcp-papelera");
+    try {
+      const items = [];
+      for (const entry of await fs.readdir(trashRoot, { withFileTypes: true })) {
+        if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+        try {
+          const metadata = JSON.parse(await fs.readFile(path.join(trashRoot, entry.name), "utf8"));
+          validateSafeRelativePath(metadata.originalPath);
+          if (typeof metadata.trashFile !== "string" || path.basename(metadata.trashFile) !== metadata.trashFile || entry.name !== `${metadata.trashFile}.json`) continue;
+          items.push({ ...metadata, metadataFile: entry.name, workspace: context.workspace, profileId: context.profile.id, trashRoot });
+        } catch {}
+      }
+      return items.sort((a, b) => Date.parse(b.deletedAt) - Date.parse(a.deletedAt))[0] || null;
+    } catch { return null; }
+  }
+
+  async function restoreLatestTrash() {
+    const item = await latestTrashItem();
+    if (!item) throw new Error("La papelera recuperable esta vacia.");
+    const destination = path.resolve(item.workspace, item.originalPath);
+    const relative = path.relative(item.workspace, destination);
+    if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("La entrada de papelera no es valida.");
+    try { await fs.access(destination); throw new Error("Ya existe un archivo en la ruta original."); } catch (error) { if (error?.code !== "ENOENT") throw error; }
+    await fs.mkdir(path.dirname(destination), { recursive: true });
+    const trashFilePath = path.resolve(item.trashRoot, item.trashFile);
+    if (path.dirname(trashFilePath) !== path.resolve(item.trashRoot)) throw new Error("La entrada de papelera no es valida.");
+    if (item.sha256 && await sha256File(trashFilePath) !== item.sha256) throw new Error("El archivo de papelera no supera la verificacion de integridad.");
+    await fs.rename(trashFilePath, destination);
+    await fs.rm(path.join(item.trashRoot, item.metadataFile), { force: true });
+    await log("trash_restored", { path: item.originalPath });
+    return item;
+  }
+
+  async function state() {
+    const context = await activeContext();
+    const settings = await readSettings(context.settingsPath);
+    const expiredBackups = await cleanupExpiredBackups(context.backupsRoot, settings.backupRetentionDays, context.binding);
+    if (expiredBackups) await log("backup_cleanup", { count: expiredBackups });
+    const savedProfiles = await profiles();
+    const approvalRequests = await readApprovals(context.approvalsPath);
+    const activity = await recentActivity(activityPath, 100);
+    const backups = await listBackups(context.backupsRoot, context.binding);
+    const trash = await latestTrashItem();
+    const readiness = await readyStatus();
+    const active = savedProfiles.profiles.find((profile) => profile.id === savedProfiles.activeProfileId) || null;
+    const lastMcp = activity.find((event) => event.source === "mcp") || null;
+    return {
+      running: Boolean(tunnelProcess), ready: readiness.ready, pid: tunnelProcess?.pid ?? null, startedAt: tunnelStartedAt,
+      workspace: active?.workspace ?? null, workspaceFingerprint: context.fingerprint, profileIsolation: true, settings, permissions: effectivePermissions(settings), permissionExpiresAt: settings.permissionExpiresAt,
+      profiles: savedProfiles, pendingApprovals: approvalRequests.filter((item) => item.status === "pending").slice(-20).reverse(),
+      backups: { count: backups.length, latest: backups[0] || null }, trash: { latest: trash ? { originalPath: trash.originalPath, deletedAt: trash.deletedAt } : null },
+      autostart: await autostartEnabled(), activity, panelLanguage: "es", dynamicPermissions: true,
+      tunnelAdminUrl: `${tunnelHealthUrl}/ui`,
+      connection: { healthLatencyMs: readiness.latencyMs, lastCheckedAt: new Date().toISOString(), lastMcpActivity: lastMcp?.timestamp ?? null, lastMcpAction: lastMcp?.action ?? null, uptimeSeconds: tunnelStartedAt ? Math.max(0, Math.round((Date.now() - Date.parse(tunnelStartedAt)) / 1000)) : 0 },
+    };
+  }
+
+  function validApiRequest(request) {
+    if (request.headers["x-control-token"] !== token) return false;
+    const origin = request.headers.origin;
+    return !origin || origin === `http://${host}:${server.address().port}` || origin === `http://localhost:${server.address().port}`;
+  }
+
+  async function serveStatic(response, fileName, contentType) {
+    const content = await fs.readFile(path.join(panelRoot, fileName));
+    response.writeHead(200, {
+      "Content-Type": contentType, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'",
+      "Referrer-Policy": "no-referrer",
+    });
+    response.end(content);
+  }
+
+  const server = http.createServer(async (request, response) => {
+    try {
+      const url = new URL(request.url, `http://${request.headers.host || `${host}:${port}`}`);
+      if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/ui")) return await serveStatic(response, "index.html", "text/html; charset=utf-8");
+      if (request.method === "GET" && url.pathname === "/styles.css") return await serveStatic(response, "styles.css", "text/css; charset=utf-8");
+      if (request.method === "GET" && url.pathname === "/app.js") return await serveStatic(response, "app.js", "text/javascript; charset=utf-8");
+      if (request.method === "GET" && url.pathname === "/healthz") return jsonResponse(response, 200, { status: "live", tunnelRunning: Boolean(tunnelProcess) });
+      if (request.method === "GET" && url.pathname === "/readyz") { const ready = (await readyStatus()).ready; return jsonResponse(response, ready ? 200 : 503, { status: ready ? "ready" : "not_ready" }); }
+      if (url.pathname.startsWith("/api/") && !validApiRequest(request)) return jsonResponse(response, 403, { error: "Solicitud local no autorizada." });
+      if (request.method === "GET" && url.pathname === "/api/state") return jsonResponse(response, 200, await state());
+
+      if (request.method === "PATCH" && url.pathname === "/api/permissions") {
+        const body = await readJsonBody(request);
+        if (!permissionNames.includes(body.permission) || typeof body.value !== "boolean" || ![null, 10, 30, 60].includes(body.durationMinutes ?? null)) return jsonResponse(response, 400, { error: "Permiso, valor o duracion no validos." });
+        const context = await activeContext();
+        const settings = await updatePermission(context.settingsPath, body.permission, body.value, body.durationMinutes ?? null);
+        await log("permission_change", { profileId: context.profile.id, permission: body.permission, value: body.value, expiresAt: settings.permissionExpiresAt[body.permission] });
+        return jsonResponse(response, 200, { permissions: effectivePermissions(settings), settings, restartRequired: false });
+      }
+
+      if (request.method === "PATCH" && url.pathname === "/api/settings") {
+        const body = await readJsonBody(request);
+        const context = await activeContext();
+        const settings = await readSettings(context.settingsPath);
+        const allowedBoolean = ["approvalRequired", "sensitiveProtection", "backupEnabled"];
+        for (const key of allowedBoolean) if (key in body) {
+          if (typeof body[key] !== "boolean") return jsonResponse(response, 400, { error: "Valor no valido." });
+          settings[key] = body[key];
+        }
+        if ("backupRetentionDays" in body) {
+          if (![null, 15, 30].includes(body.backupRetentionDays)) return jsonResponse(response, 400, { error: "Retencion no valida." });
+          settings.backupRetentionDays = body.backupRetentionDays;
+        }
+        await writeSettings(context.settingsPath, settings);
+        await log("security_settings_change", { profileId: context.profile.id, changes: body });
+        return jsonResponse(response, 200, { settings });
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/profiles") {
+        const body = await readJsonBody(request);
+        if (typeof body.name !== "string" || !body.name.trim()) return jsonResponse(response, 400, { error: "Indica un nombre para el perfil." });
+        const workspace = await validateWorkspace(body.workspace, dataRoot);
+        const saved = await profiles();
+        const profile = createProfile(body.name, workspace);
+        saved.profiles.push(profile);
+        if (!saved.activeProfileId) saved.activeProfileId = profile.id;
+        await writeProfiles(profilesPath, saved);
+        await log("profile_created", { profileId: profile.id, workspace });
+        return jsonResponse(response, 201, { profiles: saved });
+      }
+
+      if (request.method === "PATCH" && url.pathname === "/api/profiles/active") {
+        const body = await readJsonBody(request);
+        const saved = await profiles();
+        if (!saved.profiles.some((profile) => profile.id === body.id)) return jsonResponse(response, 404, { error: "Perfil no encontrado." });
+        saved.activeProfileId = body.id;
+        await writeProfiles(profilesPath, saved);
+        await log("profile_selected", { profileId: body.id });
+        if (tunnelProcess) await restartTunnel();
+        return jsonResponse(response, 200, await state());
+      }
+
+      if (request.method === "DELETE" && url.pathname.startsWith("/api/profiles/")) {
+        const id = decodeURIComponent(url.pathname.split("/").pop());
+        const saved = await profiles();
+        if (saved.profiles.length <= 1) return jsonResponse(response, 409, { error: "Debe existir al menos un perfil." });
+        if (id === saved.activeProfileId) return jsonResponse(response, 409, { error: "No puedes borrar el perfil activo." });
+        saved.profiles = saved.profiles.filter((profile) => profile.id !== id);
+        await writeProfiles(profilesPath, saved);
+        await log("profile_deleted", { profileId: id });
+        return jsonResponse(response, 200, { profiles: saved });
+      }
+
+      if (request.method === "POST" && url.pathname.startsWith("/api/approvals/")) {
+        const id = decodeURIComponent(url.pathname.split("/").pop());
+        const body = await readJsonBody(request);
+        if (!["approved", "rejected"].includes(body.status)) return jsonResponse(response, 400, { error: "Decision no valida." });
+        const context = await activeContext();
+        const approval = await decideApproval(context.approvalsPath, id, body.status, { profileId: context.profile.id, workspaceFingerprint: context.fingerprint });
+        if (!approval) return jsonResponse(response, 404, { error: "Solicitud pendiente no encontrada." });
+        await log(`approval_${body.status}`, { profileId: context.profile.id, requestId: id, path: approval.path, requestedAction: approval.action });
+        return jsonResponse(response, 200, { approval });
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/backups/restore-latest") { const restored = await restoreLatestBackup(); return jsonResponse(response, 200, { restored }); }
+      if (request.method === "POST" && url.pathname === "/api/trash/restore-latest") { const restored = await restoreLatestTrash(); return jsonResponse(response, 200, { restored }); }
+      if (request.method === "PATCH" && url.pathname === "/api/autostart") { const body = await readJsonBody(request); if (typeof body.value !== "boolean") return jsonResponse(response, 400, { error: "Valor no valido." }); await setAutostart(body.value); return jsonResponse(response, 200, { autostart: await autostartEnabled() }); }
+
+      if (request.method === "POST" && url.pathname.startsWith("/api/tunnel/")) {
+        const action = url.pathname.split("/").pop();
+        if (action === "start") await startTunnel(); else if (action === "stop") await stopTunnel(); else if (action === "restart") await restartTunnel(); else return jsonResponse(response, 404, { error: "Accion desconocida." });
+        return jsonResponse(response, 200, await state());
+      }
+      return jsonResponse(response, 404, { error: "No encontrado." });
+    } catch (error) {
+      await log("panel_error", { result: "error", error: error instanceof Error ? error.message : "Error interno." }).catch(() => {});
+      return jsonResponse(response, 500, { error: error instanceof Error ? error.message : "Error interno." });
+    }
+  });
+
+  await new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, host, resolve); });
+  const panelUrl = `http://${host}:${server.address().port}/ui#${token}`;
+  const panelUrlPath = path.join(dataRoot, "panel-url.txt");
+  await fs.mkdir(dataRoot, { recursive: true });
+  await fs.writeFile(panelUrlPath, panelUrl, { encoding: "utf8", mode: 0o600 });
+  if (options.autoStart !== false) await startTunnel();
+  return { url: `http://${host}:${server.address().port}`, panelUrl, token, state, startTunnel, stopTunnel, restartTunnel, async close() { await stopTunnel(); await new Promise((resolve) => server.close(resolve)); await fs.rm(panelUrlPath, { force: true }).catch(() => {}); } };
+}
+
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isMain) {
+  const controller = await createControlPanel({ testMode: process.env.CONTROL_PANEL_TEST_MODE === "1" });
+  console.log("Panel de control seguro preparado.");
+  if (process.env.CONTROL_PANEL_OPEN_BROWSER === "1" && process.platform === "win32") {
+    const opener = spawn("cmd.exe", ["/c", "start", "", controller.panelUrl], { detached: true, windowsHide: true, stdio: "ignore" });
+    opener.unref();
+  }
+  let closing = false;
+  const shutdown = async () => { if (closing) return; closing = true; await controller.close(); process.exit(0); };
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+}

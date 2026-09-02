@@ -1,0 +1,13 @@
+node_modules/
+vendor/
+design/
+.tunnel-client/
+.env
+.env.*
+*.log
+*.tmp
+*.bak
+coverage/
+dist/
+.DS_Store
+Thumbs.db
