@@ -1,66 +1,86 @@
-# Security audit — 2026-09-01
+# Auditoría de seguridad — 6 de septiembre de 2026
 
-## Result
+## Resultado
 
-No open critical or high-severity finding was identified after remediation.
-The tunnel was running and ready at the end of the review with read-only access,
-per-operation approval, sensitive-path protection and backups enabled.
+No se han encontrado vulnerabilidades críticas. Las recomendaciones inmediatas de
+esta revisión ya están aplicadas, pero el proyecto debe permanecer privado hasta
+resolver los dos hallazgos de prioridad alta descritos más abajo.
 
-## Remediations verified
+El límite de confianza sigue siendo la cuenta local de Windows: el túnel protege
+el acceso remoto y restringe la carpeta autorizada, pero no pretende aislarse de
+otro proceso malicioso que ya se ejecute con la misma cuenta del usuario.
 
-| Control | Result |
-|---|---|
-| Permissions, approvals and backups isolated per profile | Pass |
-| Approval key bound to profile, workspace, operation, path and content | Pass |
-| Approval consumption protected by an atomic file lock | Pass |
-| Project and private state cannot be selected as a workspace | Pass |
-| Path traversal, absolute paths, symlinks, junctions, ADS and Windows reserved names blocked | Pass |
-| Backup metadata bound to profile/workspace and contained in its store | Pass |
-| Backup SHA-256 verified before restoration | Pass |
-| Control-plane credentials removed before loading the MCP server | Pass |
-| Private data moved outside the source tree and protected by Windows ACLs | Pass |
-| Tunnel profile ACL restricted to the user, SYSTEM and administrators | Pass |
-| Control token absent from public HTML | Pass |
-| Ephemeral panel link stored only in the private data directory | Pass |
-| Audit events chained by SHA-256 and automatically rotated | Pass |
-| Audit-chain verification | Pass |
-| Desktop and mobile panel rendering; ES/EN interaction; no console warnings/errors | Pass |
-| Automated MCP and control-panel tests | Pass |
-| Current source-tree scan for key, tunnel ID and personal-path patterns | Pass |
-| Package dry run excludes credentials, local state, vendor binaries and logs | Pass |
+## Mejoras verificadas en esta revisión
 
-## Residual findings
+- La clave del plano de control ya no se publica en el entorno del proceso de
+  PowerShell que inicia el sistema.
+- El controlador retira las credenciales de OpenAI de su propio entorno y de los
+  procesos auxiliares. Solo construye un entorno con la clave necesaria al iniciar
+  `tunnel-client`.
+- `mcp-launcher.mjs` elimina esas credenciales antes de importar el código del
+  servidor MCP. La limitación y su modelo de amenazas se registran en
+  [ADR-001](docs/decisions/0001-limit-control-plane-key-scope.md).
+- La credencial almacenada continúa protegida con DPAPI y ACL restringidas.
+- El panel continúa ligado a `127.0.0.1`, con token efímero, comprobación de origen,
+  CSP y cabeceras defensivas.
+- Se añadió integración continua para ejecutar pruebas y auditoría de dependencias
+  en cambios, propuestas de cambio y semanalmente. Las acciones oficiales están
+  fijadas por hash de commit y el flujo solo tiene permiso de lectura.
+- Se corrigió `qs` de `6.15.3` a `6.16.0`; `npm audit --omit=dev` termina sin
+  vulnerabilidades conocidas.
 
-### Medium — dependency advisory status could not be retrieved
+## Hallazgos abiertos
 
-`npm audit` was attempted both normally and outside the workspace sandbox. The npm
-registry request failed because the local TLS chain could not be verified. This is
-not evidence of a vulnerable dependency, but it leaves the current advisory status
-unconfirmed. Do not bypass TLS verification. Repair the trusted certificate chain
-or run the audit in GitHub Actions before a public release.
+### Prioridad alta
 
-### Low — no Git history exists yet
+1. **Las vistas previas para aprobar cambios cargan archivos completos en memoria.**
+   `server.mjs` lee el archivo entero antes de acotarlo visualmente al sobrescribir
+   o eliminar. Un archivo muy grande dentro de la carpeta autorizada puede agotar
+   memoria. Debe leerse solo una ventana limitada y probarse con archivos grandes.
 
-The current source tree is clean for the scanned secret and personal-path patterns,
-and the local state directory has been removed from it. Because this directory is
-not yet a Git repository, there is no commit history to inspect. After initializing
-Git, run a history-aware secret scanner before the first push.
+2. **La restauración necesita volver a comprobar el destino justo antes de
+   escribir.** Las operaciones de restaurar una copia o la papelera validan rutas
+   léxicas, pero no repiten todas las comprobaciones contra enlaces simbólicos o
+   uniones del flujo MCP. Además, restaurar una copia puede sobrescribir un archivo
+   más reciente. Deben usar una resolución segura común, fallar si el destino ya
+   existe salvo confirmación explícita y escribir de forma atómica.
 
-### Low — local account remains the trust boundary
+### Prioridad media
 
-An attacker already executing code as the same Windows user can potentially inspect
-process memory, manipulate the authorized files or stop the tunnel. The project does
-not claim to defend against a fully compromised local account.
+- La comprobación de hash, la copia de seguridad y la escritura son pasos
+  separados; otro proceso local podría cambiar el archivo entre ellos.
+- La cadena del registro de auditoría dispone de verificador, pero este no se
+  ejecuta automáticamente al iniciar, y cada rotación comienza una cadena nueva.
+- El campo `confirmar` del esquema de algunas herramientas no participa en la
+  autorización efectiva y puede inducir a error.
+- La lectura por fragmentos calcula la huella del archivo completo, por lo que un
+  archivo enorme sigue consumiendo E/S completa.
+- Si el movimiento a la papelera funciona y después falla la escritura de sus
+  metadatos, puede quedar un elemento recuperable sin índice.
 
-## Public-release decisions still required
+### Prioridad baja o limitaciones conocidas
 
-- Apache License 2.0 selected for the project source.
-- Confirm the redistribution terms for `tunnel-client.exe`. The binary is excluded
-  from Git and package output.
-- Add CI for `npm test`, dependency review and secret scanning.
-- Enable GitHub Dependabot and secret scanning after repository creation.
+- Una aplicación maliciosa que ya se ejecute con la misma cuenta puede intentar
+  inspeccionar memoria o procesos. La clave debe rotarse ante cualquier sospecha.
+- Los scripts de instalación, almacén seguro e inicio automático solo son
+  compatibles con Windows. La evolución segura para macOS y Linux está definida en
+  [ROADMAP.md](ROADMAP.md), sin recurrir a claves en texto plano.
+- La API del panel ya está separada de la interfaz, pero todavía no está versionada
+  ni documentada como interfaz estable. Debe seguir siendo exclusivamente local.
 
-The OpenAI Secure MCP Tunnel is intended for private MCP connections and does not
-turn this server into a public plugin endpoint. Publishing the source on GitHub is a
-separate distribution choice; each user should configure their own private tunnel
-and credential.
+## Evidencia de verificación
+
+- Pruebas automatizadas del saneamiento del entorno, servidor MCP y panel.
+- Comprobación sintáctica de JavaScript y PowerShell.
+- `npm audit --omit=dev`: cero vulnerabilidades conocidas tras actualizar `qs`.
+- Revisión de diferencias y búsqueda de patrones habituales de secretos.
+- Flujo de CI para Windows y Node.js 22 en cada cambio propuesto y semanalmente.
+
+## Condiciones antes de publicar
+
+1. Corregir y cubrir con pruebas los dos hallazgos de prioridad alta.
+2. Repetir esta auditoría y el escaneo del historial completo de Git.
+3. Confirmar las condiciones de redistribución de `tunnel-client`; el ejecutable no
+   forma parte del repositorio.
+4. Mantener la API en bucle local. Cualquier acceso remoto requerirá un modelo de
+   amenazas nuevo, autenticación fuerte y otra revisión independiente.

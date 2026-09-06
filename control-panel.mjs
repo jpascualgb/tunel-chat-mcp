@@ -8,6 +8,11 @@ import { execFile as execFileCallback, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
+  buildSanitizedEnvironment,
+  buildTunnelClientEnvironment,
+  controlPlaneSecretNames,
+} from "./process-environment.mjs";
+import {
   appendActivity,
   createProfile,
   decideApproval,
@@ -105,6 +110,7 @@ export async function createControlPanel(options = {}) {
   const activityPath = options.activityPath || path.join(dataRoot, "activity.jsonl");
   const profilesPath = options.profilesPath || path.join(dataRoot, "profiles.json");
   const clientPath = options.clientPath || defaultClientPath;
+  const controlPlaneApiKey = options.controlPlaneApiKey || null;
   const testMode = options.testMode === true;
   const token = randomBytes(24).toString("hex");
   let tunnelProcess = null;
@@ -161,8 +167,7 @@ export async function createControlPanel(options = {}) {
     await fs.access(clientPath);
     tunnelProcess = spawn(clientPath, ["run", "--profile", "pc-personal", "--health.listen-addr", "127.0.0.1:8082"], {
       cwd: projectRoot,
-      env: {
-        ...process.env,
+      env: buildTunnelClientEnvironment(process.env, controlPlaneApiKey, {
         MCP_WORKSPACE_ROOT: context.workspace,
         MCP_PROFILE_ID: context.profile.id,
         MCP_SETTINGS_PATH: context.settingsPath,
@@ -172,7 +177,7 @@ export async function createControlPanel(options = {}) {
         MCP_BACKUPS_ROOT: context.backupsRoot,
         MCP_CONTROL_ROOT: projectRoot,
         MCP_CONTROL_DATA_ROOT: dataRoot,
-      },
+      }),
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -214,7 +219,7 @@ export async function createControlPanel(options = {}) {
   async function autostartEnabled() {
     if (testMode) return testAutostart;
     try {
-      const { stdout } = await execFile("powershell.exe", ["-NoProfile", "-Command", `(Get-ScheduledTask -TaskName '${autostartTaskName}' -ErrorAction SilentlyContinue) -ne $null`], { windowsHide: true });
+      const { stdout } = await execFile("powershell.exe", ["-NoProfile", "-Command", `(Get-ScheduledTask -TaskName '${autostartTaskName}' -ErrorAction SilentlyContinue) -ne $null`], { env: buildSanitizedEnvironment(process.env), windowsHide: true });
       return stdout.trim().toLowerCase() === "true";
     } catch { return false; }
   }
@@ -222,7 +227,7 @@ export async function createControlPanel(options = {}) {
   async function setAutostart(value) {
     if (testMode) { testAutostart = value; return; }
     const script = path.join(projectRoot, value ? "enable-autostart.ps1" : "disable-autostart.ps1");
-    await execFile("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script], { cwd: projectRoot, windowsHide: true });
+    await execFile("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script], { cwd: projectRoot, env: buildSanitizedEnvironment(process.env), windowsHide: true });
     await log("autostart_change", { value });
   }
 
@@ -430,10 +435,12 @@ export async function createControlPanel(options = {}) {
 
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMain) {
-  const controller = await createControlPanel({ testMode: process.env.CONTROL_PANEL_TEST_MODE === "1" });
+  const controlPlaneApiKey = process.env.CONTROL_PLANE_API_KEY || null;
+  for (const name of controlPlaneSecretNames) delete process.env[name];
+  const controller = await createControlPanel({ controlPlaneApiKey, testMode: process.env.CONTROL_PANEL_TEST_MODE === "1" });
   console.log("Panel de control seguro preparado.");
   if (process.env.CONTROL_PANEL_OPEN_BROWSER === "1" && process.platform === "win32") {
-    const opener = spawn("cmd.exe", ["/c", "start", "", controller.panelUrl], { detached: true, windowsHide: true, stdio: "ignore" });
+    const opener = spawn("cmd.exe", ["/c", "start", "", controller.panelUrl], { detached: true, env: buildSanitizedEnvironment(process.env), windowsHide: true, stdio: "ignore" });
     opener.unref();
   }
   let closing = false;

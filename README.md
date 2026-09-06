@@ -34,8 +34,11 @@ No existe ninguna herramienta para ejecutar comandos, PowerShell o programas.
   propio túnel.
 - Las copias llevan perfil, huella de carpeta y SHA-256. Los metadatos se validan
   antes de listar, limpiar o restaurar.
-- La credencial del plano de control se cifra con DPAPI y se elimina del entorno
-  antes de cargar el servidor MCP.
+- La credencial del plano de control se cifra con DPAPI. Durante la ejecución se
+  retira del entorno del controlador, solo se añade deliberadamente al proceso de
+  `tunnel-client` y se elimina antes de cargar el código del servidor MCP o iniciar
+  procesos auxiliares. La decisión está documentada en
+  [ADR-001](docs/decisions/0001-limit-control-plane-key-scope.md).
 - El panel escucha exclusivamente en `127.0.0.1`, usa token efímero anti-CSRF,
   política CSP y cabeceras defensivas.
 - La auditoría rota automáticamente y encadena criptográficamente sus eventos para
@@ -158,16 +161,22 @@ de aprobaciones.
 - `SECURITY.md`: política de seguridad y divulgación responsable.
 - `SECURITY-AUDIT.md`: última auditoría y riesgos residuales conocidos.
 - `TUTORIAL-CHATGPT.md`: conexión, prueba y desconexión desde ChatGPT.com.
+- `ROADMAP.md`: soporte multiplataforma y evolución segura de la API local.
+- `docs/decisions/`: decisiones de arquitectura y sus límites de seguridad.
 
 ## Publicación
 
-Este directorio aún no se publica automáticamente. Antes de subirlo a GitHub:
+El repositorio se mantiene privado. Antes de hacerlo público:
 
 1. Confirmar las condiciones de redistribución de `tunnel-client`; `vendor/` está
    excluido del repositorio.
-2. Ejecutar las pruebas, la auditoría de dependencias y un escaneo de secretos.
-3. Revisar que no haya rutas, capturas ni identificadores personales.
-4. Configurar Dependabot y análisis de secretos en GitHub.
+2. Resolver los hallazgos de prioridad alta de [SECURITY-AUDIT.md](SECURITY-AUDIT.md).
+3. Volver a ejecutar las pruebas, la auditoría de dependencias y un escaneo de
+   secretos. La integración continua ya ejecuta pruebas y `npm audit` en cada
+   cambio propuesto y semanalmente.
+4. Revisar que no haya rutas, capturas ni identificadores personales.
+5. Activar en GitHub las funciones disponibles de Dependabot, análisis de secretos
+   y protección de la rama principal.
 
 ## Licencia
 

@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node server.mjs",
     "panel": "node control-panel.mjs",
-    "test": "node test-server.mjs && node test-control-panel.mjs"
+    "test": "node test-process-environment.mjs && node test-server.mjs && node test-control-panel.mjs"
   },
   "engines": {
     "node": ">=22"

@@ -74,20 +74,45 @@ if (-not $NonInteractive) {
     Write-Output "Carpeta autorizada para esta sesion: $workspaceRoot"
 }
 
+$controllerProcess = $null
+$controllerExitCode = 1
+$startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+
 try {
-    $env:CONTROL_PLANE_API_KEY = $credential.Password
-    $env:MCP_WORKSPACE_ROOT = $workspaceRoot
-    $env:MCP_TUNNEL_DATA_ROOT = $dataRoot
-    $env:CONTROL_PANEL_OPEN_BROWSER = if ($NonInteractive) { "0" } else { "1" }
-    & $nodePath $controllerPath
-    exit $LASTEXITCODE
+    # Limit the plaintext secret to the controller's child environment. It is
+    # never added to this PowerShell process environment or to the persistent
+    # user environment.
+    $startInfo.FileName = $nodePath
+    $startInfo.Arguments = '"' + $controllerPath + '"'
+    $startInfo.WorkingDirectory = $baseDirectory
+    $startInfo.UseShellExecute = $false
+    foreach ($secretName in @("CONTROL_PLANE_API_KEY", "OPENAI_API_KEY", "OPENAI_ADMIN_KEY")) {
+        [void]$startInfo.EnvironmentVariables.Remove($secretName)
+    }
+    $startInfo.EnvironmentVariables["CONTROL_PLANE_API_KEY"] = $credential.Password
+    $startInfo.EnvironmentVariables["MCP_WORKSPACE_ROOT"] = $workspaceRoot
+    $startInfo.EnvironmentVariables["MCP_TUNNEL_DATA_ROOT"] = $dataRoot
+    $startInfo.EnvironmentVariables["CONTROL_PANEL_OPEN_BROWSER"] = if ($NonInteractive) { "0" } else { "1" }
+
+    $controllerProcess = [System.Diagnostics.Process]::Start($startInfo)
+    foreach ($secretName in @("CONTROL_PLANE_API_KEY", "OPENAI_API_KEY", "OPENAI_ADMIN_KEY")) {
+        [void]$startInfo.EnvironmentVariables.Remove($secretName)
+    }
+    $credential = $null
+    $secureKey = $null
+
+    $controllerProcess.WaitForExit()
+    $controllerExitCode = $controllerProcess.ExitCode
 }
 finally {
-    Remove-Item Env:CONTROL_PLANE_API_KEY -ErrorAction SilentlyContinue
-    Remove-Item Env:MCP_WORKSPACE_ROOT -ErrorAction SilentlyContinue
-    Remove-Item Env:MCP_TUNNEL_DATA_ROOT -ErrorAction SilentlyContinue
-    Remove-Item Env:CONTROL_PANEL_OPEN_BROWSER -ErrorAction SilentlyContinue
+    foreach ($secretName in @("CONTROL_PLANE_API_KEY", "OPENAI_API_KEY", "OPENAI_ADMIN_KEY")) {
+        [void]$startInfo.EnvironmentVariables.Remove($secretName)
+    }
     $credential = $null
     $secureKey = $null
     $workspaceRoot = $null
+    $controllerProcess = $null
+    $startInfo = $null
 }
+
+exit $controllerExitCode
