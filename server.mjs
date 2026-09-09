@@ -1,6 +1,5 @@
 import fs from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
-import { createReadStream } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,6 +19,7 @@ import {
   validateSafeRelativePath,
   workspaceFingerprint,
 } from "./secure-store.mjs";
+import { atomicRestoreFromFile, atomicWriteBuffer, atomicWriteJsonFile, bufferPreview, readBoundedPreview, sha256File } from "./safe-files.mjs";
 
 const projectRoot = path.dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = process.env.MCP_WORKSPACE_ROOT?.trim() || null;
@@ -132,12 +132,6 @@ async function resolveAuthorizedNewFile(requestedPath, settings) {
   return path.join(realParent, path.basename(candidate));
 }
 
-async function sha256File(filePath) {
-  const hash = createHash("sha256");
-  for await (const chunk of createReadStream(filePath)) hash.update(chunk);
-  return hash.digest("hex");
-}
-
 function hashBuffer(buffer) { return createHash("sha256").update(buffer).digest("hex"); }
 
 function decodeContent(content, format) {
@@ -149,20 +143,13 @@ function decodeContent(content, format) {
   return Buffer.from(content, "utf8");
 }
 
-function textPreview(buffer) {
-  try {
-    const text = new TextDecoder("utf-8", { fatal: true }).decode(buffer.subarray(0, 16_384));
-    return { format: "text", content: text.slice(0, 4000), truncated: buffer.length > 16_384 || text.length > 4000 };
-  } catch { return { format: "binary", content: `${buffer.length} bytes`, truncated: false }; }
-}
-
-function operationKey(action, relativePath, contentHash = "") {
-  return createHash("sha256").update(`${profileId}\0${workspaceId}\0${action}\0${relativePath}\0${contentHash}`).digest("hex");
+function operationKey(action, relativePath, contentHash = "", previousHash = "") {
+  return createHash("sha256").update(`${profileId}\0${workspaceId}\0${action}\0${relativePath}\0${previousHash}\0${contentHash}`).digest("hex");
 }
 
 async function requireLocalApproval(settings, request, approvalId) {
   if (!settings.approvalRequired) return { autonomous: true };
-  const key = operationKey(request.action, request.relativePath, request.contentHash);
+  const key = operationKey(request.action, request.relativePath, request.contentHash, request.previousHash);
   if (approvalId) {
     const approved = await consumeApproval(approvalsPath, approvalId, key);
     if (!approved) throw new Error("La aprobacion local no existe, ha caducado, ya se uso o no coincide con esta operacion.");
@@ -220,8 +207,14 @@ async function createBackup(filePath, relativePath, action, settings) {
     sha256: await sha256File(filePath),
     size: (await fs.stat(filePath)).size,
   };
-  await fs.copyFile(filePath, path.join(backupsRoot, backupFile));
-  await fs.writeFile(path.join(backupsRoot, `${id}.json`), JSON.stringify(metadata, null, 2), "utf8");
+  const backupPath = path.join(backupsRoot, backupFile);
+  try {
+    await atomicRestoreFromFile(filePath, backupPath, { expectedSourceHash: metadata.sha256 });
+    await atomicWriteJsonFile(path.join(backupsRoot, `${id}.json`), metadata);
+  } catch (error) {
+    await fs.rm(backupPath, { force: true }).catch(() => {});
+    throw error;
+  }
   await audit("backup_created", relativePath, { backupId: id, action });
   return metadata;
 }
@@ -278,7 +271,7 @@ server.registerTool("listar_archivos", {
     const settings = await requirePermission("read");
     const { realPath } = await resolveAuthorizedPath(ruta || ".", "directory", settings);
     const entries = (await fs.readdir(realPath, { withFileTypes: true }))
-      .filter((entry) => !internalNames.has(entry.name) && !(settings.sensitiveProtection && isSensitiveRelativePath(relativeForDisplay(path.join(realPath, entry.name)))))
+      .filter((entry) => !internalNames.has(entry.name.toLowerCase()) && !(settings.sensitiveProtection && isSensitiveRelativePath(relativeForDisplay(path.join(realPath, entry.name)))))
       .sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name, "es"));
     const items = await Promise.all(entries.slice(0, maxListEntries).map(async (entry) => ({ nombre: entry.name, ruta_relativa: relativeForDisplay(path.join(realPath, entry.name)), tipo: entry.isSymbolicLink() ? "enlace_bloqueado" : entry.isDirectory() ? "carpeta" : entry.isFile() ? "archivo" : "otro", tamano_bytes: entry.isFile() ? (await fs.lstat(path.join(realPath, entry.name))).size : null })));
     const payload = { carpeta: relativeForDisplay(realPath), elementos: items, total_en_carpeta: entries.length, resultado_truncado: entries.length > maxListEntries };
@@ -288,10 +281,10 @@ server.registerTool("listar_archivos", {
 });
 
 server.registerTool("leer_archivo", {
-  title: "Leer archivo", description: "Lee archivos autorizados por fragmentos de hasta 2 MiB.",
-  inputSchema: { ruta: z.string().min(1).max(1000), formato: z.enum(["auto", "texto", "base64"]).optional(), offset_bytes: z.number().int().min(0).optional(), max_bytes: z.number().int().min(1).max(maxReadBytes).optional() },
+  title: "Leer archivo", description: "Lee archivos autorizados por fragmentos de hasta 2 MiB. La huella completa puede omitirse para evitar recorrer archivos grandes.",
+  inputSchema: { ruta: z.string().min(1).max(1000), formato: z.enum(["auto", "texto", "base64"]).optional(), offset_bytes: z.number().int().min(0).optional(), max_bytes: z.number().int().min(1).max(maxReadBytes).optional(), incluir_sha256: z.boolean().optional() },
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-}, async ({ ruta, formato = "auto", offset_bytes = 0, max_bytes = 512 * 1024 }) => {
+}, async ({ ruta, formato = "auto", offset_bytes = 0, max_bytes = 512 * 1024, incluir_sha256 = true }) => {
   let handle;
   try {
     const settings = await requirePermission("read");
@@ -309,7 +302,7 @@ server.registerTool("leer_archivo", {
       catch { if (formato === "texto") throw new Error("El fragmento no contiene texto UTF-8 valido."); }
     }
     if (content === undefined) { outputFormat = "base64"; content = chunk.toString("base64"); }
-    const payload = { ruta_relativa: relativeForDisplay(realPath), formato: outputFormat, offset_bytes, bytes_devuelto: bytesRead, tamano_total_bytes: stats.size, hay_mas: offset_bytes + bytesRead < stats.size, sha256: await sha256File(realPath), contenido: content };
+    const payload = { ruta_relativa: relativeForDisplay(realPath), formato: outputFormat, offset_bytes, bytes_devuelto: bytesRead, tamano_total_bytes: stats.size, hay_mas: offset_bytes + bytesRead < stats.size, sha256: incluir_sha256 ? await sha256File(realPath) : null, contenido: content };
     await audit("read", payload.ruta_relativa, { bytes: bytesRead, format: outputFormat });
     return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }], structuredContent: payload };
   } catch (error) { return toolError(error, "read_error", ruta); } finally { await handle?.close(); }
@@ -319,9 +312,10 @@ server.registerTool("modificar_archivo", {
   title: "Crear o modificar archivo", description: "Crea o sobrescribe un archivo. La primera llamada puede generar una solicitud de aprobacion local.",
   inputSchema: { ruta: z.string().min(1).max(1000), contenido: z.string(), formato: z.enum(["texto", "base64"]).optional(), modo: z.enum(["crear", "sobrescribir"]), sha256_esperado: z.string().regex(/^[a-f0-9]{64}$/).optional(), confirmar: z.boolean().optional(), aprobacion_id: z.string().uuid().optional() },
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
-}, async ({ ruta, contenido, formato = "texto", modo, sha256_esperado, aprobacion_id }) => {
+}, async ({ ruta, contenido, formato = "texto", modo, sha256_esperado, confirmar, aprobacion_id }) => {
   try {
     const settings = await requirePermission(modo === "crear" ? "create" : "modify");
+    if (!settings.approvalRequired && confirmar !== true) throw new Error("El modo autonomo exige confirmar=true para cada escritura.");
     const encoded = decodeContent(contenido, formato);
     if (encoded.length > maxWriteBytes) throw new Error("El contenido supera 5 MiB.");
     let destination;
@@ -333,13 +327,19 @@ server.registerTool("modificar_archivo", {
       if (!sha256_esperado) throw new Error("Para sobrescribir proporciona el SHA-256 de leer_archivo.");
       previousHash = await sha256File(destination);
       if (previousHash !== sha256_esperado) throw new Error("El archivo cambio desde la ultima lectura.");
-      beforePreview = textPreview(await fs.readFile(destination));
+      beforePreview = await readBoundedPreview(destination);
     }
     const relative = relativeForDisplay(destination);
-    const approval = await requireLocalApproval(settings, { action: modo, relativePath: relative, contentHash: hashBuffer(encoded), preview: { before: beforePreview, after: textPreview(encoded), size: encoded.length } }, aprobacion_id);
+    const approval = await requireLocalApproval(settings, { action: modo, relativePath: relative, contentHash: hashBuffer(encoded), previousHash, preview: { before: beforePreview, after: bufferPreview(encoded), size: encoded.length } }, aprobacion_id);
     if (approval.pending) return approvalRequiredResult(approval.pending);
+    if (modo === "crear") {
+      destination = await resolveAuthorizedNewFile(ruta, settings);
+    } else {
+      destination = (await resolveAuthorizedPath(ruta, "file", settings)).realPath;
+      if (await sha256File(destination) !== previousHash) throw new Error("El archivo cambio despues de la aprobacion local.");
+    }
     const backup = modo === "sobrescribir" ? await createBackup(destination, relative, modo, settings) : null;
-    await fs.writeFile(destination, encoded, { flag: modo === "crear" ? "wx" : "w" });
+    await atomicWriteBuffer(destination, encoded, { createOnly: modo === "crear", expectedDestinationHash: previousHash });
     const payload = { modificado: true, operacion: modo, ruta_relativa: relative, tamano_bytes: encoded.length, sha256_anterior: previousHash, sha256_nuevo: hashBuffer(encoded), copia_seguridad_id: backup?.id ?? null, aprobacion: approval.autonomous ? "modo_autonomo" : approval.approvalId };
     await audit(modo, relative, { bytes: encoded.length, previousHash, newHash: payload.sha256_nuevo, backupId: backup?.id, approvalId: approval.approvalId, autonomous: approval.autonomous === true });
     return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }], structuredContent: payload };
@@ -350,21 +350,29 @@ server.registerTool("eliminar_archivo", {
   title: "Eliminar archivo", description: "Mueve un archivo a la papelera recuperable y crea copia si esta activada.",
   inputSchema: { ruta: z.string().min(1).max(1000), sha256_esperado: z.string().regex(/^[a-f0-9]{64}$/), confirmar: z.boolean().optional(), aprobacion_id: z.string().uuid().optional() },
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
-}, async ({ ruta, sha256_esperado, aprobacion_id }) => {
+}, async ({ ruta, sha256_esperado, confirmar, aprobacion_id }) => {
   try {
     const settings = await requirePermission("delete");
-    const { realPath, stats } = await resolveAuthorizedPath(ruta, "file", settings);
+    if (!settings.approvalRequired && confirmar !== true) throw new Error("El modo autonomo exige confirmar=true para cada eliminacion.");
+    let { realPath, stats } = await resolveAuthorizedPath(ruta, "file", settings);
     const relative = relativeForDisplay(realPath);
     const currentHash = await sha256File(realPath);
     if (currentHash !== sha256_esperado) throw new Error("El archivo cambio desde la ultima lectura.");
-    const approval = await requireLocalApproval(settings, { action: "delete", relativePath: relative, contentHash: currentHash, preview: { before: textPreview(await fs.readFile(realPath)), size: stats.size, after: null } }, aprobacion_id);
+    const approval = await requireLocalApproval(settings, { action: "delete", relativePath: relative, contentHash: currentHash, preview: { before: await readBoundedPreview(realPath), size: stats.size, after: null } }, aprobacion_id);
     if (approval.pending) return approvalRequiredResult(approval.pending);
+    ({ realPath, stats } = await resolveAuthorizedPath(ruta, "file", settings));
+    if (await sha256File(realPath) !== currentHash) throw new Error("El archivo cambio despues de la aprobacion local.");
     const backup = await createBackup(realPath, relative, "delete", settings);
     const trashDirectory = path.join(workspaceRealRoot, trashName);
     await fs.mkdir(trashDirectory, { recursive: true });
     const trashPath = path.join(trashDirectory, `${Date.now()}-${randomUUID()}-${path.basename(realPath)}`);
     await fs.rename(realPath, trashPath);
-    await fs.writeFile(`${trashPath}.json`, JSON.stringify({ originalPath: relative, trashFile: path.basename(trashPath), deletedAt: new Date().toISOString(), sha256: currentHash }, null, 2), "utf8");
+    try {
+      await atomicWriteJsonFile(`${trashPath}.json`, { originalPath: relative, trashFile: path.basename(trashPath), deletedAt: new Date().toISOString(), sha256: currentHash });
+    } catch (error) {
+      await fs.rename(trashPath, realPath).catch(() => {});
+      throw error;
+    }
     const payload = { eliminado: true, recuperable: true, ruta_original: relative, papelera_local: relativeForDisplay(trashPath), sha256: currentHash, copia_seguridad_id: backup?.id ?? null, aprobacion: approval.autonomous ? "modo_autonomo" : approval.approvalId };
     await audit("delete", relative, { trashPath: payload.papelera_local, backupId: backup?.id, approvalId: approval.approvalId, autonomous: approval.autonomous === true });
     return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }], structuredContent: payload };

@@ -18,9 +18,19 @@ export const defaultSettings = {
 
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
-async function readJson(filePath, fallback) {
-  try { return JSON.parse(await fs.readFile(filePath, "utf8")); }
-  catch { return structuredClone(fallback); }
+async function readJson(filePath, fallback, label) {
+  let content;
+  try {
+    content = await fs.readFile(filePath, "utf8");
+  } catch (error) {
+    if (error?.code === "ENOENT") return structuredClone(fallback);
+    throw new Error(`No se pudo leer la configuracion de ${label}.`, { cause: error });
+  }
+  try {
+    return JSON.parse(content);
+  } catch (error) {
+    throw new Error(`La configuracion de ${label} no es valida.`, { cause: error });
+  }
 }
 
 async function writeJsonUnlocked(filePath, value) {
@@ -56,8 +66,9 @@ export async function withFileLock(filePath, callback) {
   throw new Error("El archivo de seguridad esta ocupado. Vuelve a intentarlo.");
 }
 
-export function normalizePathForIdentity(value) {
-  return path.resolve(value).replace(/[\\/]+$/, "").normalize("NFC").toLowerCase();
+export function normalizePathForIdentity(value, platform = process.platform) {
+  const normalized = path.resolve(value).replace(/[\\/]+$/, "").normalize("NFC");
+  return platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
 export function workspaceFingerprint(workspace) {
@@ -91,7 +102,7 @@ export function validateSafeRelativePath(value) {
 }
 
 export async function readSettings(settingsPath) {
-  const saved = await readJson(settingsPath, defaultSettings);
+  const saved = await readJson(settingsPath, defaultSettings, "seguridad");
   const expires = saved.permissionExpiresAt || {};
   return {
     read: saved.read === true, create: saved.create === true, modify: saved.modify === true, delete: saved.delete === true,
@@ -142,8 +153,9 @@ async function lastAuditHash(activityPath) {
 export async function appendActivity(activityPath, event, options = {}) {
   await withFileLock(activityPath, async () => {
     await fs.mkdir(path.dirname(activityPath), { recursive: true });
+    const previousHash = await lastAuditHash(activityPath);
     await rotateAuditUnlocked(activityPath, options.maxBytes ?? 5 * 1024 * 1024, options.retainedFiles ?? 5);
-    const record = { timestamp: new Date().toISOString(), result: "success", ...event, previousHash: await lastAuditHash(activityPath) };
+    const record = { timestamp: new Date().toISOString(), result: "success", ...event, previousHash };
     record.eventHash = createHash("sha256").update(JSON.stringify(record)).digest("hex");
     await fs.appendFile(activityPath, `${JSON.stringify(record)}\n`, { encoding: "utf8", mode: 0o600 });
   });
@@ -156,15 +168,23 @@ export async function recentActivity(activityPath, limit = 100) {
   } catch { return []; }
 }
 
-export async function verifyAuditChain(activityPath) {
+export async function verifyAuditChain(activityPath, retainedFiles = 5) {
   try {
-    const lines = (await fs.readFile(activityPath, "utf8")).trim().split(/\r?\n/).filter(Boolean);
-    let previousHash = null;
+    const paths = [];
+    for (let index = retainedFiles; index >= 1; index -= 1) {
+      const rotatedPath = `${activityPath}.${index}`;
+      try { await fs.access(rotatedPath); paths.push(rotatedPath); } catch (error) { if (error?.code !== "ENOENT") throw error; }
+    }
+    try { await fs.access(activityPath); paths.push(activityPath); } catch (error) { if (error?.code !== "ENOENT") throw error; }
+    const lines = [];
+    for (const filePath of paths) lines.push(...(await fs.readFile(filePath, "utf8")).trim().split(/\r?\n/).filter(Boolean));
+    let previousHash;
     for (const line of lines) {
       const record = JSON.parse(line);
       const storedHash = record.eventHash;
       const clone = { ...record };
       delete clone.eventHash;
+      if (previousHash === undefined) previousHash = clone.previousHash;
       if (clone.previousHash !== previousHash || storedHash !== createHash("sha256").update(JSON.stringify(clone)).digest("hex")) return false;
       previousHash = storedHash;
     }
@@ -174,7 +194,7 @@ export async function verifyAuditChain(activityPath) {
 
 export async function readProfiles(profilesPath, fallbackWorkspace = null) {
   const fallback = fallbackWorkspace ? { activeProfileId: "default", profiles: [{ id: "default", name: "Principal", workspace: fallbackWorkspace }] } : { activeProfileId: null, profiles: [] };
-  const saved = await readJson(profilesPath, fallback);
+  const saved = await readJson(profilesPath, fallback, "perfiles");
   const profiles = Array.isArray(saved.profiles) ? saved.profiles.filter((profile) => typeof profile?.id === "string" && /^[a-zA-Z0-9-]{1,80}$/.test(profile.id) && typeof profile?.name === "string" && typeof profile?.workspace === "string") : [];
   const activeProfileId = profiles.some((profile) => profile.id === saved.activeProfileId) ? saved.activeProfileId : profiles[0]?.id ?? null;
   return { activeProfileId, profiles };
@@ -187,8 +207,16 @@ export async function writeProfiles(profilesPath, profiles) {
 export function createProfile(name, workspace) { return { id: randomUUID(), name: name.trim(), workspace }; }
 
 export async function readApprovals(approvalsPath) {
-  const saved = await readJson(approvalsPath, { requests: [] });
-  return Array.isArray(saved.requests) ? saved.requests : [];
+  const saved = await readJson(approvalsPath, { requests: [] }, "aprobaciones");
+  if (!Array.isArray(saved.requests)) return [];
+  return saved.requests.filter((request) => (
+    request && typeof request === "object"
+    && typeof request.id === "string"
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(request.id)
+    && ["pending", "approved", "rejected", "used"].includes(request.status)
+    && typeof request.createdAt === "string"
+    && Number.isFinite(Date.parse(request.createdAt))
+  ));
 }
 
 async function writeApprovalsUnlocked(approvalsPath, requests) {

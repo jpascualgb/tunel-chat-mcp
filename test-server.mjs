@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { consumeApproval, decideApproval, writeApprovals } from "./secure-store.mjs";
@@ -10,6 +11,7 @@ const temporaryRoot = path.join(temporaryBase, "workspace");
 const stateRoot = path.join(temporaryBase, "state");
 await fs.mkdir(temporaryRoot);
 await fs.mkdir(stateRoot);
+await fs.mkdir(path.join(temporaryRoot, ".MCP-PAPELERA"));
 const permissionsPath = path.join(stateRoot, "permissions.json");
 const activityPath = path.join(stateRoot, "activity.jsonl");
 const approvalsPath = path.join(stateRoot, "approvals.json");
@@ -65,12 +67,20 @@ try {
   if (listing.isError || !parseResult(listing).elementos.some((item) => item.nombre === "package.json")) {
     throw new Error("listar_archivos no encontro el archivo esperado.");
   }
+  if (parseResult(listing).elementos.some((item) => item.nombre.toLowerCase() === ".mcp-papelera")) {
+    throw new Error("listar_archivos expuso un directorio interno con distinta capitalizacion.");
+  }
 
   const textReading = await client.callTool({ name: "leer_archivo", arguments: { ruta: "package.json" } });
   const textPayload = parseResult(textReading);
   if (textReading.isError || textPayload.formato !== "texto" || !textPayload.contenido.includes("pc-personal-mcp")) {
     throw new Error("leer_archivo no devolvio el texto esperado.");
   }
+  const readingWithoutHash = parseResult(await client.callTool({
+    name: "leer_archivo",
+    arguments: { ruta: "package.json", incluir_sha256: false },
+  }));
+  if (readingWithoutHash.sha256 !== null) throw new Error("La lectura no permitio omitir la huella completa para archivos grandes.");
 
   const escapeAttempt = await client.callTool({ name: "leer_archivo", arguments: { ruta: "../fuera.txt" } });
   if (!escapeAttempt.isError) throw new Error("La proteccion contra escape de ruta no funciono.");
@@ -94,10 +104,38 @@ try {
   });
   if (creation.isError) throw new Error("No se pudo crear un archivo binario autorizado.");
 
+  const approvalTarget = path.join(temporaryRoot, "approval-target.txt");
+  await fs.writeFile(approvalTarget, "estado mostrado", "utf8");
+  const shownHash = createHash("sha256").update("estado mostrado").digest("hex");
+  const staleApprovalRequest = await client.callTool({
+    name: "modificar_archivo",
+    arguments: { ruta: "approval-target.txt", contenido: "contenido aprobado", modo: "sobrescribir", sha256_esperado: shownHash },
+  });
+  const staleApprovalId = parseResult(staleApprovalRequest).solicitud_id;
+  await decideApproval(approvalsPath, staleApprovalId, "approved");
+  await fs.writeFile(approvalTarget, "estado distinto", "utf8");
+  const changedHash = createHash("sha256").update("estado distinto").digest("hex");
+  const staleApprovalUse = await client.callTool({
+    name: "modificar_archivo",
+    arguments: { ruta: "approval-target.txt", contenido: "contenido aprobado", modo: "sobrescribir", sha256_esperado: changedHash, aprobacion_id: staleApprovalId },
+  });
+  if (!staleApprovalUse.isError) throw new Error("Una aprobacion obsoleta autorizo un estado anterior diferente del mostrado.");
+
   await fs.writeFile(permissionsPath, JSON.stringify({
     read: true, create: true, modify: true, delete: true,
     approvalRequired: false, sensitiveProtection: true, backupEnabled: true, backupRetentionDays: 15,
   }));
+
+  const unconfirmedAutonomousWrite = await client.callTool({
+    name: "modificar_archivo",
+    arguments: { ruta: "autonomous.txt", contenido: "sin confirmacion", modo: "crear" },
+  });
+  if (!unconfirmedAutonomousWrite.isError) throw new Error("El modo autonomo escribio sin confirmacion explicita del llamante.");
+  const confirmedAutonomousWrite = await client.callTool({
+    name: "modificar_archivo",
+    arguments: { ruta: "autonomous.txt", contenido: "confirmado", modo: "crear", confirmar: true },
+  });
+  if (confirmedAutonomousWrite.isError) throw new Error("El modo autonomo rechazo una escritura confirmada.");
 
   const protectedSecret = await client.callTool({
     name: "modificar_archivo",
