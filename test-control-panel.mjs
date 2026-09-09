@@ -14,7 +14,7 @@ await fs.mkdir(temporaryRoot);
 await fs.mkdir(physicalDataRoot);
 await fs.symlink(physicalDataRoot, dataRoot, process.platform === "win32" ? "junction" : "dir");
 const profilesPath = path.join(dataRoot, "profiles.json");
-const profile = { id: "test", name: "Pruebas", workspace: temporaryRoot };
+const profile = { id: "test", name: "Pruebas", workspace: await fs.realpath(temporaryRoot) };
 const { settingsPath: permissionsPath, approvalsPath, backupsRoot } = profileDataPaths(dataRoot, profile);
 const activityPath = path.join(dataRoot, "activity.jsonl");
 assert.equal(loopbackOrigin("127.0.0.1", 8080), "http://127.0.0.1:8080");
@@ -120,7 +120,7 @@ try {
   });
   if (blockedDataResponse.ok) throw new Error("El panel permitio autorizar sus propios datos privados.");
 
-  await fs.writeFile(approvalsPath, JSON.stringify({ requests: [{ id: "11111111-1111-4111-8111-111111111111", operationKey: "x", status: "pending", createdAt: new Date().toISOString(), profileId: "test", workspaceFingerprint: workspaceFingerprint(temporaryRoot), action: "delete", path: "demo.txt" }] }));
+  await fs.writeFile(approvalsPath, JSON.stringify({ requests: [{ id: "11111111-1111-4111-8111-111111111111", operationKey: "x", status: "pending", createdAt: new Date().toISOString(), profileId: "test", workspaceFingerprint: workspaceFingerprint(profile.workspace), action: "delete", path: "demo.txt" }] }));
   const approval = await api("/api/v1/approvals/11111111-1111-4111-8111-111111111111", { method: "POST", body: JSON.stringify({ status: "approved" }) });
   if (approval.approval.status !== "approved") throw new Error("La decision de aprobacion no funciono.");
 
