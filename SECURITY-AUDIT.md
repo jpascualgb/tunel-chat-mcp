@@ -85,6 +85,9 @@ macOS/Linux y la procedencia/licencia del binario privado `tunnel-client`.
 - El escáner local no encontró credenciales ni archivos sensibles en el estado
   actual ni en objetos alcanzables del historial Git.
 - `git diff --check` no detectó errores de espacios o parches mal formados.
+- La ejecución de GitHub Actions
+  [34390800878](https://github.com/jpascualgb/secure-mcp-local-guard/actions/runs/34390800878)
+  terminó correctamente en Windows, macOS y Ubuntu con el commit `fb6fc5f`.
 
 ## Riesgos residuales
 
@@ -115,7 +118,8 @@ macOS/Linux y la procedencia/licencia del binario privado `tunnel-client`.
 
 ## Condiciones antes de publicar
 
-1. Confirmar el primer flujo verde de CI en los tres sistemas.
+1. Mantener verde la validación de CI en los tres sistemas para cada cambio de
+   publicación.
 2. Ejecutar una prueba manual de almacén, arranque, reinicio y desinstalación en
    macOS y Linux.
 3. Verificar procedencia, integridad y derechos de distribución de cada binario de
