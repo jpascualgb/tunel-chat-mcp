@@ -23,18 +23,26 @@ Necesitas:
 Los permisos del túnel en Platform y el acceso al modo desarrollador de ChatGPT son
 independientes. Tener uno no concede automáticamente el otro.
 
-## 1. Inicia el túnel en tu PC
+## 1. Inicia el túnel en tu equipo
 
-Abre PowerShell dentro del proyecto y ejecuta:
+Ejecuta la interfaz portátil:
+
+```text
+node cli.mjs run
+```
+
+En Windows también puedes abrir PowerShell dentro del proyecto y ejecutar:
 
 ```powershell
 .\start-tunnel.ps1
 ```
 
-1. Selecciona la carpeta que quieres autorizar.
+1. El iniciador te preguntará por la carpeta autorizada. Pulsa `Enter` para
+   conservar la del perfil activo o escribe otra ruta para seleccionar o crear un
+   perfil aislado.
 2. Espera a que se abra el panel de control.
 3. Comprueba que el estado sea **Conectado** o **Preparado**.
-4. Mantén PowerShell y el túnel en ejecución mientras lo configuras o utilizas
+4. Mantén el proceso y el túnel en ejecución mientras lo configuras o utilizas
    desde ChatGPT.
 
 Puedes comprobar el estado técnico en:
@@ -128,7 +136,7 @@ individual en el panel.
 
 En cada sesión:
 
-1. Inicia el túnel o comprueba que se haya iniciado con Windows.
+1. Inicia el túnel o comprueba que el inicio automático del sistema esté activo.
 2. Verifica en el panel la carpeta y el perfil activos.
 3. Activa solo los permisos necesarios y, preferiblemente, durante un tiempo
    limitado.
@@ -206,4 +214,3 @@ No publiques ni pegues en chats, incidencias o capturas:
 - El enlace efímero del panel que contiene `#<token>`.
 - Rutas personales, listados o contenido de la carpeta autorizada.
 - Registros de actividad sin revisarlos y redactarlos previamente.
-

@@ -1,86 +1,122 @@
-# Auditoría de seguridad — 6 de septiembre de 2026
+# Auditoría de seguridad y calidad — 9 de septiembre de 2026
 
-## Resultado
+## Dictamen
 
-No se han encontrado vulnerabilidades críticas. Las recomendaciones inmediatas de
-esta revisión ya están aplicadas, pero el proyecto debe permanecer privado hasta
-resolver los dos hallazgos de prioridad alta descritos más abajo.
+La nueva revisión no deja vulnerabilidades críticas ni de prioridad alta conocidas
+en el código fuente del repositorio. Los hallazgos altos de la auditoría anterior y
+los requisitos funcionales descritos en los audios están implementados y cubiertos
+por pruebas de regresión.
 
-El límite de confianza sigue siendo la cuenta local de Windows: el túnel protege
-el acceso remoto y restringe la carpeta autorizada, pero no pretende aislarse de
-otro proceso malicioso que ya se ejecute con la misma cuenta del usuario.
+El resultado autoriza pruebas privadas y revisión por pares. Antes de una
+publicación general aún deben verificarse en máquinas reales los adaptadores de
+macOS/Linux y la procedencia/licencia del binario privado `tunnel-client`.
 
-## Mejoras verificadas en esta revisión
+## Correcciones verificadas
 
-- La clave del plano de control ya no se publica en el entorno del proceso de
-  PowerShell que inicia el sistema.
-- El controlador retira las credenciales de OpenAI de su propio entorno y de los
-  procesos auxiliares. Solo construye un entorno con la clave necesaria al iniciar
-  `tunnel-client`.
-- `mcp-launcher.mjs` elimina esas credenciales antes de importar el código del
-  servidor MCP. La limitación y su modelo de amenazas se registran en
-  [ADR-001](docs/decisions/0001-limit-control-plane-key-scope.md).
-- La credencial almacenada continúa protegida con DPAPI y ACL restringidas.
-- El panel continúa ligado a `127.0.0.1`, con token efímero, comprobación de origen,
-  CSP y cabeceras defensivas.
-- Se añadió integración continua para ejecutar pruebas y auditoría de dependencias
-  en cambios, propuestas de cambio y semanalmente. Las acciones oficiales están
-  fijadas por hash de commit y el flujo solo tiene permiso de lectura.
-- Se corrigió `qs` de `6.15.3` a `6.16.0`; `npm audit --omit=dev` termina sin
-  vulnerabilidades conocidas.
+- La configuración corrupta falla de forma cerrada; ya no reactiva permisos ni
+  sustituye silenciosamente perfiles o aprobaciones.
+- Cada aprobación queda ligada a operación, perfil, carpeta, contenido nuevo y
+  huella del archivo anterior. Un cambio posterior invalida la aprobación.
+- Las vistas previas leen como máximo 16 KiB y muestran como máximo 4.000
+  caracteres, incluso para archivos de decenas de MiB.
+- Escrituras, copias y restauraciones usan temporales y reemplazos o enlaces
+  atómicos. Antes de restaurar se repiten las comprobaciones de enlaces y de la
+  huella del destino.
+- La papelera revierte el movimiento si no puede registrar sus metadatos; los
+  metadatos de copias y papelera se publican atómicamente.
+- El modo autónomo exige `confirmar=true` en cada escritura o eliminación.
+- La cadena de auditoría conserva continuidad entre rotaciones y el panel verifica
+  su integridad.
+- La identidad de perfiles solo ignora mayúsculas en Windows; en sistemas de
+  archivos POSIX evita colisiones entre rutas que se diferencian por capitalización.
+- Una lectura por fragmentos puede omitir explícitamente la huella completa para no
+  recorrer archivos grandes cuando no se necesita sobrescribirlos.
+- El configurador de Windows ya no añade la clave al entorno de PowerShell. La
+  clave solo se incorpora al entorno dedicado de `tunnel-client` y se elimina
+  antes de cargar el servidor MCP o iniciar auxiliares.
+- El panel rechaza cualquier dirección que no sea `127.0.0.1` o `::1`.
+- Los procesos auxiliares de credenciales y servicios reciben un entorno saneado;
+  no heredan claves OpenAI presentes accidentalmente en la sesión del usuario.
+- Los nombres de ejecutable disponibles en `PATH` ya no se convierten en rutas
+  locales inexistentes, y el panel informa de forma controlada si falta el cliente.
+- La ejecución manual pregunta por la carpeta de trabajo, conserva la activa con
+  `Enter` y crea un perfil aislado cuando se elige una carpeta nueva.
+- El identificador se valida con el formato exacto admitido por el cliente:
+  `tunnel_` seguido de 32 letras minúsculas o dígitos.
+- El escáner revisa nombres sensibles incluso en archivos grandes, incluye los
+  bloqueos de dependencias y comprueba cada ruta de cada árbol Git aunque varias
+  rutas compartan el mismo contenido. También rechaza binarios o archivos de
+  terceros que hayan sido versionados bajo `vendor/`.
+- Las solicitudes de aprobación almacenadas se validan antes de mostrarse y sus
+  identificadores se escapan en el panel.
+- Los directorios internos se ocultan del listado sin depender de mayúsculas o
+  minúsculas, además de mantenerse inaccesibles por ruta directa.
+- Las URL IPv6 loopback y los caracteres `%` de las unidades `systemd` se generan
+  con el escape exigido por cada plataforma.
 
-## Hallazgos abiertos
+## Funcionalidad solicitada en los audios
 
-### Prioridad alta
+- Hay una CLI única con `platform`, `credential set`, `setup`, `run` y
+  `autostart`.
+- El almacén seguro es DPAPI en Windows, Keychain en macOS y Secret Service en
+  Linux. La ausencia del proveedor nativo produce un error; no existe alternativa
+  en texto plano.
+- El inicio de usuario usa Task Scheduler, LaunchAgent o `systemd --user`. Las
+  definiciones no contienen credenciales y conservan las rutas configuradas.
+- Frontend y backend se comunican mediante `/api/v1`; entradas y errores tienen un
+  contrato independiente validado con Zod y documentado en
+  [docs/control-api-v1.md](docs/control-api-v1.md).
+- La integración continua valida Node 22 en Windows, macOS y Linux, comprueba
+  sintaxis, ejecuta regresiones, revisa dependencias y escanea secretos en el árbol
+  y en todo el historial Git.
 
-1. **Las vistas previas para aprobar cambios cargan archivos completos en memoria.**
-   `server.mjs` lee el archivo entero antes de acotarlo visualmente al sobrescribir
-   o eliminar. Un archivo muy grande dentro de la carpeta autorizada puede agotar
-   memoria. Debe leerse solo una ventana limitada y probarse con archivos grandes.
+## Evidencia de esta revisión
 
-2. **La restauración necesita volver a comprobar el destino justo antes de
-   escribir.** Las operaciones de restaurar una copia o la papelera validan rutas
-   léxicas, pero no repiten todas las comprobaciones contra enlaces simbólicos o
-   uniones del flujo MCP. Además, restaurar una copia puede sobrescribir un archivo
-   más reciente. Deben usar una resolución segura común, fallar si el destino ya
-   existe salvo confirmación explícita y escribir de forma atómica.
+- Instalación reproducible definida por `package-lock.json` y sin scripts de
+  instalación de terceros en la integración continua (`npm ci --ignore-scripts`).
+- Dependencias de producción: `npm audit --omit=dev --audit-level=moderate`, 0
+  vulnerabilidades conocidas en la consulta del 9 de septiembre de 2026.
+- Siete grupos de pruebas superados: entorno, plataformas/DPAPI real en Windows,
+  CLI, escáner de secretos, regresiones de seguridad, servidor MCP y panel/API.
+- 19 archivos JavaScript superaron `node --check`.
+- Todos los scripts PowerShell superaron el analizador sintáctico.
+- El escáner local no encontró credenciales ni archivos sensibles en el estado
+  actual ni en objetos alcanzables del historial Git.
+- `git diff --check` no detectó errores de espacios o parches mal formados.
+
+## Riesgos residuales
 
 ### Prioridad media
 
-- La comprobación de hash, la copia de seguridad y la escritura son pasos
-  separados; otro proceso local podría cambiar el archivo entre ellos.
-- La cadena del registro de auditoría dispone de verificador, pero este no se
-  ejecuta automáticamente al iniciar, y cada rotación comienza una cadena nueva.
-- El campo `confirmar` del esquema de algunas herramientas no participa en la
-  autorización efectiva y puede inducir a error.
-- La lectura por fragmentos calcula la huella del archivo completo, por lo que un
-  archivo enorme sigue consumiendo E/S completa.
-- Si el movimiento a la papelera funciona y después falla la escritura de sus
-  metadatos, puede quedar un elemento recuperable sin índice.
+1. **Validación real de macOS y Linux.** En Windows se verificó un ciclo DPAPI
+   completo. Las definiciones de Keychain, Secret Service, launchd y systemd tienen
+   pruebas de contrato y CI multiplataforma, pero esta auditoría local no dispuso de
+   sesiones macOS/Linux con sus almacenes desbloqueados. Debe completarse una prueba
+   funcional en ambos sistemas antes de prometer soporte de producción.
 
-### Prioridad baja o limitaciones conocidas
+2. **Binario externo.** `tunnel-client` no forma parte del historial y su código no
+   se ha auditado aquí. Deben comprobarse canal oficial, firma o suma publicada,
+   versión y condiciones de redistribución para cada plataforma.
 
-- Una aplicación maliciosa que ya se ejecute con la misma cuenta puede intentar
-  inspeccionar memoria o procesos. La clave debe rotarse ante cualquier sospecha.
-- Los scripts de instalación, almacén seguro e inicio automático solo son
-  compatibles con Windows. La evolución segura para macOS y Linux está definida en
-  [ROADMAP.md](ROADMAP.md), sin recurrir a claves en texto plano.
-- La API del panel ya está separada de la interfaz, pero todavía no está versionada
-  ni documentada como interfaz estable. Debe seguir siendo exclusivamente local.
+### Prioridad baja y límites del modelo
 
-## Evidencia de verificación
-
-- Pruebas automatizadas del saneamiento del entorno, servidor MCP y panel.
-- Comprobación sintáctica de JavaScript y PowerShell.
-- `npm audit --omit=dev`: cero vulnerabilidades conocidas tras actualizar `qs`.
-- Revisión de diferencias y búsqueda de patrones habituales de secretos.
-- Flujo de CI para Windows y Node.js 22 en cada cambio propuesto y semanalmente.
+- Otro proceso malicioso con la misma cuenta local puede inspeccionar memoria,
+  manipular procesos o volver a calcular registros. La clave permanece en memoria
+  y en el entorno de `tunnel-client` mientras este la necesita.
+- La cadena de auditoría detecta alteraciones parciales, pero no está anclada en un
+  servicio externo ni firmada con una clave separada; no es evidencia forense
+  frente al propietario de la cuenta local.
+- La atomicidad de creación utiliza enlaces duros en el mismo volumen. En un
+  sistema de archivos que no los admita, la operación falla de forma cerrada.
+- Calcular SHA-256 completo sigue consumiendo E/S cuando el llamador lo solicita;
+  puede omitirse con `incluir_sha256=false` para lecturas exploratorias.
 
 ## Condiciones antes de publicar
 
-1. Corregir y cubrir con pruebas los dos hallazgos de prioridad alta.
-2. Repetir esta auditoría y el escaneo del historial completo de Git.
-3. Confirmar las condiciones de redistribución de `tunnel-client`; el ejecutable no
-   forma parte del repositorio.
-4. Mantener la API en bucle local. Cualquier acceso remoto requerirá un modelo de
-   amenazas nuevo, autenticación fuerte y otra revisión independiente.
+1. Confirmar el primer flujo verde de CI en los tres sistemas.
+2. Ejecutar una prueba manual de almacén, arranque, reinicio y desinstalación en
+   macOS y Linux.
+3. Verificar procedencia, integridad y derechos de distribución de cada binario de
+   `tunnel-client`.
+4. Mantener la API exclusivamente en loopback. Cualquier acceso remoto requiere un
+   modelo de amenazas, autenticación y auditoría nuevos.

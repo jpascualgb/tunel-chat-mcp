@@ -1,63 +1,50 @@
 param(
-    [string]$TunnelId
+    [string]$TunnelId,
+    [string]$Workspace,
+    [string]$ClientPath
 )
 
 $ErrorActionPreference = "Stop"
 
 $baseDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
-$clientPath = Join-Path $baseDirectory "vendor\tunnel-client\tunnel-client.exe"
-$serverPath = Join-Path $baseDirectory "mcp-launcher.mjs"
+$cliPath = Join-Path $baseDirectory "cli.mjs"
 $dataRoot = if ($env:MCP_TUNNEL_DATA_ROOT) { $env:MCP_TUNNEL_DATA_ROOT } else { Join-Path $env:LOCALAPPDATA "OpenAI-Secure-MCP-Tunnel" }
-$credentialPath = Join-Path $dataRoot "control-plane-key.xml"
 $connectionPath = Join-Path $dataRoot "tunnel.json"
+$workspaceConfigPath = Join-Path $dataRoot "workspace.json"
 $nodePath = (Get-Command node -ErrorAction Stop).Source
 
-foreach ($requiredPath in @($clientPath, $serverPath, $credentialPath, $nodePath)) {
+if ([string]::IsNullOrWhiteSpace($ClientPath)) {
+    $ClientPath = Join-Path $baseDirectory "vendor\tunnel-client\tunnel-client.exe"
+}
+foreach ($requiredPath in @($ClientPath, $cliPath, $nodePath)) {
     if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
         throw "Falta un archivo necesario: $requiredPath"
     }
 }
 
-$secureKey = Import-Clixml -LiteralPath $credentialPath
-$credential = [System.Net.NetworkCredential]::new("", $secureKey)
-$serverCommandPath = $serverPath.Replace("\", "/")
-$mcpCommand = "node $serverCommandPath"
-$tunnelId = $TunnelId
-
-if (Test-Path -LiteralPath $connectionPath -PathType Leaf) {
-    $tunnelId = [string](Get-Content -Raw -LiteralPath $connectionPath | ConvertFrom-Json).tunnelId
+if ([string]::IsNullOrWhiteSpace($TunnelId) -and (Test-Path -LiteralPath $connectionPath -PathType Leaf)) {
+    $TunnelId = [string](Get-Content -Raw -LiteralPath $connectionPath | ConvertFrom-Json).tunnelId
 }
-if ([string]::IsNullOrWhiteSpace($tunnelId)) {
-    $tunnelId = Read-Host "Identificador del tunel de OpenAI (tunnel_...)"
+if ([string]::IsNullOrWhiteSpace($TunnelId)) {
+    $TunnelId = Read-Host "Identificador del tunel de OpenAI (tunnel_...)"
 }
-if ($tunnelId -notmatch '^tunnel_[A-Za-z0-9]+$') {
-    throw "El identificador del tunel no tiene un formato valido."
+if ($TunnelId -notmatch '^tunnel_[a-z0-9]{32}$') {
+    throw "El identificador del tunel debe usar tunnel_ seguido de 32 caracteres minusculos o digitos."
 }
-New-Item -ItemType Directory -Force -Path $dataRoot | Out-Null
-[ordered]@{ tunnelId = $tunnelId; updatedAtUtc = [DateTime]::UtcNow.ToString("o") } |
-    ConvertTo-Json | Set-Content -LiteralPath $connectionPath -Encoding UTF8
 
-try {
-    $env:CONTROL_PLANE_API_KEY = $credential.Password
-
-    & $clientPath init `
-        --force `
-        --sample sample_mcp_stdio_local `
-        --profile pc-personal `
-        --tunnel-id $tunnelId `
-        --mcp-command $mcpCommand
-
-    if ($LASTEXITCODE -ne 0) {
-        throw "tunnel-client init termino con codigo $LASTEXITCODE."
-    }
-
-    & $clientPath doctor --profile pc-personal --explain
-    if ($LASTEXITCODE -ne 0) {
-        throw "tunnel-client doctor termino con codigo $LASTEXITCODE."
-    }
+if ([string]::IsNullOrWhiteSpace($Workspace) -and (Test-Path -LiteralPath $workspaceConfigPath -PathType Leaf)) {
+    $Workspace = [string](Get-Content -Raw -LiteralPath $workspaceConfigPath | ConvertFrom-Json).workspaceRoot
 }
-finally {
-    Remove-Item Env:CONTROL_PLANE_API_KEY -ErrorAction SilentlyContinue
-    $credential = $null
-    $secureKey = $null
+if ([string]::IsNullOrWhiteSpace($Workspace)) {
+    $Workspace = Read-Host "Ruta de la carpeta de trabajo autorizada"
+}
+
+& $nodePath $cliPath setup `
+    --workspace $Workspace `
+    --tunnel-id $TunnelId `
+    --client $ClientPath `
+    --data-root $dataRoot
+
+if ($LASTEXITCODE -ne 0) {
+    throw "La configuracion del tunel termino con codigo $LASTEXITCODE."
 }

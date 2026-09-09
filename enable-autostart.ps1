@@ -1,9 +1,18 @@
+param(
+    [string]$DataRoot,
+    [string]$ClientPath
+)
+
 $ErrorActionPreference = "Stop"
 
 $taskName = "OpenAI Secure MCP Tunnel - PC personal"
 $startScript = Join-Path $PSScriptRoot "start-tunnel.ps1"
-$dataRoot = if ($env:MCP_TUNNEL_DATA_ROOT) { $env:MCP_TUNNEL_DATA_ROOT } else { Join-Path $env:LOCALAPPDATA "OpenAI-Secure-MCP-Tunnel" }
+$dataRoot = if ($DataRoot) { $DataRoot } elseif ($env:MCP_TUNNEL_DATA_ROOT) { $env:MCP_TUNNEL_DATA_ROOT } else { Join-Path $env:LOCALAPPDATA "OpenAI-Secure-MCP-Tunnel" }
 $workspaceConfig = Join-Path $dataRoot "workspace.json"
+
+foreach ($value in @($dataRoot, $ClientPath)) {
+    if ($value -and $value -match '[\r\n"]') { throw "Las rutas no pueden contener caracteres de control ni comillas." }
+}
 
 if (-not (Test-Path -LiteralPath $startScript -PathType Leaf)) {
     throw "No se encuentra el iniciador del tunel: $startScript"
@@ -15,7 +24,8 @@ if (-not (Test-Path -LiteralPath $workspaceConfig -PathType Leaf)) {
 
 $windowsPowerShell = (Get-Command powershell.exe -ErrorAction Stop).Source
 $userId = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-$arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$startScript`" -NonInteractive"
+$arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$startScript`" -NonInteractive -DataRoot `"$dataRoot`""
+if ($ClientPath) { $arguments += " -ClientPath `"$ClientPath`"" }
 
 $action = New-ScheduledTaskAction `
     -Execute $windowsPowerShell `

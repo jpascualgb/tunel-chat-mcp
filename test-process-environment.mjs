@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import {
   buildSanitizedEnvironment,
   buildTunnelClientEnvironment,
@@ -36,5 +37,15 @@ assert.throws(
   /credencial.*plano de control/i,
   "El cliente del tunel se inicio sin credencial dedicada.",
 );
+
+const setupScript = await readFile(new URL("./setup-tunnel.ps1", import.meta.url), "utf8");
+assert.doesNotMatch(
+  setupScript,
+  /\$env:CONTROL_PLANE_API_KEY\s*=/i,
+  "La configuracion no debe publicar la credencial en el entorno del proceso PowerShell.",
+);
+const protectionScript = await readFile(new URL("./protect-key.ps1", import.meta.url), "utf8");
+assert.match(protectionScript, /control-plane-key\.dpapi/i);
+assert.doesNotMatch(protectionScript, /Export-Clixml/i);
 
 console.log("Entorno verificado: solo tunnel-client recibe deliberadamente la credencial.");

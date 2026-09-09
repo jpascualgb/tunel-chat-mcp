@@ -1,11 +1,8 @@
 import fs from "node:fs/promises";
 import http from "node:http";
-import os from "node:os";
 import path from "node:path";
-import { createHash, randomBytes } from "node:crypto";
-import { createReadStream } from "node:fs";
-import { execFile as execFileCallback, spawn } from "node:child_process";
-import { promisify } from "node:util";
+import { randomBytes } from "node:crypto";
+import { spawn } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   buildSanitizedEnvironment,
@@ -17,7 +14,6 @@ import {
   createProfile,
   decideApproval,
   effectivePermissions,
-  permissionNames,
   pathsOverlap,
   profileDataPaths,
   readApprovals,
@@ -27,17 +23,53 @@ import {
   updatePermission,
   validateBackupMetadata,
   validateSafeRelativePath,
+  verifyAuditChain,
   workspaceFingerprint,
   writeProfiles,
   writeSettings,
 } from "./secure-store.mjs";
+import {
+  atomicRestoreFromFile,
+  atomicMoveToNewPath,
+  resolveExistingWorkspaceFile,
+  resolveNewWorkspaceFile,
+  sha256File,
+} from "./safe-files.mjs";
+import {
+  ApiError,
+  apiBasePath,
+  apiErrorPayload,
+  apiSchemas,
+  parseApiInput,
+} from "./control-api-contract.mjs";
+import {
+  autostartEnabled as platformAutostartEnabled,
+  defaultDataRoot as platformDefaultDataRoot,
+  setAutostart as setPlatformAutostart,
+} from "./platform-runtime.mjs";
 
-const execFile = promisify(execFileCallback);
 const projectRoot = path.dirname(fileURLToPath(import.meta.url));
 const panelRoot = path.join(projectRoot, "panel");
-const defaultDataRoot = process.env.MCP_TUNNEL_DATA_ROOT || path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "OpenAI-Secure-MCP-Tunnel");
-const defaultClientPath = path.join(projectRoot, "vendor", "tunnel-client", "tunnel-client.exe");
-const autostartTaskName = "OpenAI Secure MCP Tunnel - PC personal";
+const defaultDataRoot = process.env.MCP_TUNNEL_DATA_ROOT || platformDefaultDataRoot();
+const defaultClientPath = process.env.MCP_TUNNEL_CLIENT_PATH || (process.platform === "win32" ? path.join(projectRoot, "vendor", "tunnel-client", "tunnel-client.exe") : "tunnel-client");
+
+export function loopbackOrigin(host, port) {
+  const hostname = host === "::1" ? "[::1]" : host;
+  return `http://${hostname}:${port}`;
+}
+
+export async function spawnTunnelProcess(command, args, options) {
+  const child = spawn(command, args, options);
+  try {
+    await new Promise((resolve, reject) => {
+      child.once("spawn", resolve);
+      child.once("error", reject);
+    });
+  } catch (error) {
+    throw new Error("No se pudo iniciar tunnel-client. Comprueba su instalacion o la ruta configurada.", { cause: error });
+  }
+  return child;
+}
 
 function jsonResponse(response, status, payload) {
   response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
@@ -49,16 +81,14 @@ async function readJsonBody(request) {
   let size = 0;
   for await (const chunk of request) {
     size += chunk.length;
-    if (size > 128 * 1024) throw new Error("Solicitud demasiado grande.");
+    if (size > 128 * 1024) throw new ApiError(413, "PAYLOAD_TOO_LARGE", "La solicitud supera 128 KiB.");
     chunks.push(chunk);
   }
-  return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
-}
-
-async function sha256File(filePath) {
-  const hash = createHash("sha256");
-  for await (const chunk of createReadStream(filePath)) hash.update(chunk);
-  return hash.digest("hex");
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+  } catch {
+    throw new ApiError(400, "INVALID_JSON", "El cuerpo de la solicitud no contiene JSON valido.");
+  }
 }
 
 async function listBackups(backupsRoot, binding) {
@@ -104,6 +134,7 @@ async function validateWorkspace(input, protectedDataRoot = defaultDataRoot) {
 
 export async function createControlPanel(options = {}) {
   const host = options.host || "127.0.0.1";
+  if (host !== "127.0.0.1" && host !== "::1") throw new Error("El panel solo puede escuchar en una direccion loopback (127.0.0.1 o ::1).");
   const port = options.port ?? Number(process.env.CONTROL_PANEL_PORT || 8080);
   const tunnelHealthUrl = options.tunnelHealthUrl || "http://127.0.0.1:8082";
   const dataRoot = options.dataRoot || defaultDataRoot;
@@ -164,8 +195,8 @@ export async function createControlPanel(options = {}) {
       await log("tunnel_start", { profileId: context.profile.id, workspaceFingerprint: context.fingerprint });
       return { changed: true };
     }
-    await fs.access(clientPath);
-    tunnelProcess = spawn(clientPath, ["run", "--profile", "pc-personal", "--health.listen-addr", "127.0.0.1:8082"], {
+    if (path.isAbsolute(clientPath) || clientPath.includes(path.sep)) await fs.access(clientPath);
+    tunnelProcess = await spawnTunnelProcess(clientPath, ["run", "--profile", "pc-personal", "--health.listen-addr", "127.0.0.1:8082"], {
       cwd: projectRoot,
       env: buildTunnelClientEnvironment(process.env, controlPlaneApiKey, {
         MCP_WORKSPACE_ROOT: context.workspace,
@@ -218,20 +249,16 @@ export async function createControlPanel(options = {}) {
 
   async function autostartEnabled() {
     if (testMode) return testAutostart;
-    try {
-      const { stdout } = await execFile("powershell.exe", ["-NoProfile", "-Command", `(Get-ScheduledTask -TaskName '${autostartTaskName}' -ErrorAction SilentlyContinue) -ne $null`], { env: buildSanitizedEnvironment(process.env), windowsHide: true });
-      return stdout.trim().toLowerCase() === "true";
-    } catch { return false; }
+    return platformAutostartEnabled({ dataRoot, projectRoot });
   }
 
   async function setAutostart(value) {
     if (testMode) { testAutostart = value; return; }
-    const script = path.join(projectRoot, value ? "enable-autostart.ps1" : "disable-autostart.ps1");
-    await execFile("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script], { cwd: projectRoot, env: buildSanitizedEnvironment(process.env), windowsHide: true });
+    await setPlatformAutostart(value, { dataRoot, projectRoot, clientPath, env: buildSanitizedEnvironment(process.env) });
     await log("autostart_change", { value });
   }
 
-  async function restoreLatestBackup() {
+  async function restoreLatestBackup(expectedCurrentSha256 = null) {
     const context = await activeContext();
     const items = await listBackups(context.backupsRoot, context.binding);
     const latest = items[0];
@@ -239,13 +266,42 @@ export async function createControlPanel(options = {}) {
     const validated = validateBackupMetadata(latest, context.binding);
     if (await sha256File(validated.backupPath) !== latest.sha256) throw new Error("La copia de seguridad no supera la verificacion de integridad.");
     validateSafeRelativePath(latest.originalPath);
-    const destination = path.resolve(context.workspace, latest.originalPath);
-    const relative = path.relative(context.workspace, destination);
-    if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("La copia no pertenece al perfil activo.");
-    await fs.mkdir(path.dirname(destination), { recursive: true });
-    await fs.copyFile(validated.backupPath, destination);
+    let destination;
+    let destinationHash = null;
+    try {
+      const existing = await resolveExistingWorkspaceFile(context.workspace, latest.originalPath);
+      destination = existing.realPath;
+      if (!/^[a-f0-9]{64}$/.test(expectedCurrentSha256 || "")) {
+        const error = new Error("Confirma la huella actual antes de sobrescribir durante la restauracion.");
+        error.code = "STATE_CONFLICT";
+        throw error;
+      }
+      destinationHash = expectedCurrentSha256;
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+      destination = await resolveNewWorkspaceFile(context.workspace, latest.originalPath);
+    }
+    await atomicRestoreFromFile(validated.backupPath, destination, {
+      expectedSourceHash: latest.sha256,
+      expectedDestinationHash: destinationHash,
+    });
     await log("backup_restored", { profileId: context.profile.id, path: latest.originalPath, backupId: latest.id });
     return latest;
+  }
+
+  async function backupRestorePrecondition() {
+    const context = await activeContext();
+    const latest = (await listBackups(context.backupsRoot, context.binding))[0];
+    if (!latest) throw new Error("No hay copias de seguridad disponibles.");
+    validateBackupMetadata(latest, context.binding);
+    try {
+      const existing = await resolveExistingWorkspaceFile(context.workspace, latest.originalPath);
+      return { backupId: latest.id, originalPath: latest.originalPath, destinationExists: true, currentSha256: await sha256File(existing.realPath) };
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+      await resolveNewWorkspaceFile(context.workspace, latest.originalPath);
+      return { backupId: latest.id, originalPath: latest.originalPath, destinationExists: false, currentSha256: null };
+    }
   }
 
   async function latestTrashItem() {
@@ -270,15 +326,10 @@ export async function createControlPanel(options = {}) {
   async function restoreLatestTrash() {
     const item = await latestTrashItem();
     if (!item) throw new Error("La papelera recuperable esta vacia.");
-    const destination = path.resolve(item.workspace, item.originalPath);
-    const relative = path.relative(item.workspace, destination);
-    if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("La entrada de papelera no es valida.");
-    try { await fs.access(destination); throw new Error("Ya existe un archivo en la ruta original."); } catch (error) { if (error?.code !== "ENOENT") throw error; }
-    await fs.mkdir(path.dirname(destination), { recursive: true });
+    const destination = await resolveNewWorkspaceFile(item.workspace, item.originalPath);
     const trashFilePath = path.resolve(item.trashRoot, item.trashFile);
     if (path.dirname(trashFilePath) !== path.resolve(item.trashRoot)) throw new Error("La entrada de papelera no es valida.");
-    if (item.sha256 && await sha256File(trashFilePath) !== item.sha256) throw new Error("El archivo de papelera no supera la verificacion de integridad.");
-    await fs.rename(trashFilePath, destination);
+    await atomicMoveToNewPath(trashFilePath, destination, item.sha256 || null);
     await fs.rm(path.join(item.trashRoot, item.metadataFile), { force: true });
     await log("trash_restored", { path: item.originalPath });
     return item;
@@ -302,7 +353,7 @@ export async function createControlPanel(options = {}) {
       workspace: active?.workspace ?? null, workspaceFingerprint: context.fingerprint, profileIsolation: true, settings, permissions: effectivePermissions(settings), permissionExpiresAt: settings.permissionExpiresAt,
       profiles: savedProfiles, pendingApprovals: approvalRequests.filter((item) => item.status === "pending").slice(-20).reverse(),
       backups: { count: backups.length, latest: backups[0] || null }, trash: { latest: trash ? { originalPath: trash.originalPath, deletedAt: trash.deletedAt } : null },
-      autostart: await autostartEnabled(), activity, panelLanguage: "es", dynamicPermissions: true,
+      autostart: await autostartEnabled(), activity, auditIntegrity: await verifyAuditChain(activityPath), panelLanguage: "es", dynamicPermissions: true,
       tunnelAdminUrl: `${tunnelHealthUrl}/ui`,
       connection: { healthLatencyMs: readiness.latencyMs, lastCheckedAt: new Date().toISOString(), lastMcpActivity: lastMcp?.timestamp ?? null, lastMcpAction: lastMcp?.action ?? null, uptimeSeconds: tunnelStartedAt ? Math.max(0, Math.round((Date.now() - Date.parse(tunnelStartedAt)) / 1000)) : 0 },
     };
@@ -311,7 +362,7 @@ export async function createControlPanel(options = {}) {
   function validApiRequest(request) {
     if (request.headers["x-control-token"] !== token) return false;
     const origin = request.headers.origin;
-    return !origin || origin === `http://${host}:${server.address().port}` || origin === `http://localhost:${server.address().port}`;
+    return !origin || origin === loopbackOrigin(host, server.address().port) || origin === `http://localhost:${server.address().port}`;
   }
 
   async function serveStatic(response, fileName, contentType) {
@@ -326,35 +377,33 @@ export async function createControlPanel(options = {}) {
 
   const server = http.createServer(async (request, response) => {
     try {
-      const url = new URL(request.url, `http://${request.headers.host || `${host}:${port}`}`);
+      const url = new URL(request.url, request.headers.host ? `http://${request.headers.host}` : loopbackOrigin(host, port));
+      const apiPath = url.pathname === apiBasePath ? "/" : url.pathname.startsWith(`${apiBasePath}/`) ? url.pathname.slice(apiBasePath.length) : null;
       if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/ui")) return await serveStatic(response, "index.html", "text/html; charset=utf-8");
       if (request.method === "GET" && url.pathname === "/styles.css") return await serveStatic(response, "styles.css", "text/css; charset=utf-8");
       if (request.method === "GET" && url.pathname === "/app.js") return await serveStatic(response, "app.js", "text/javascript; charset=utf-8");
       if (request.method === "GET" && url.pathname === "/healthz") return jsonResponse(response, 200, { status: "live", tunnelRunning: Boolean(tunnelProcess) });
       if (request.method === "GET" && url.pathname === "/readyz") { const ready = (await readyStatus()).ready; return jsonResponse(response, ready ? 200 : 503, { status: ready ? "ready" : "not_ready" }); }
-      if (url.pathname.startsWith("/api/") && !validApiRequest(request)) return jsonResponse(response, 403, { error: "Solicitud local no autorizada." });
-      if (request.method === "GET" && url.pathname === "/api/state") return jsonResponse(response, 200, await state());
+      if (apiPath && !validApiRequest(request)) return jsonResponse(response, 403, apiErrorPayload("UNAUTHORIZED", "Solicitud local no autorizada."));
+      if (request.method === "GET" && apiPath === "/state") return jsonResponse(response, 200, await state());
 
-      if (request.method === "PATCH" && url.pathname === "/api/permissions") {
-        const body = await readJsonBody(request);
-        if (!permissionNames.includes(body.permission) || typeof body.value !== "boolean" || ![null, 10, 30, 60].includes(body.durationMinutes ?? null)) return jsonResponse(response, 400, { error: "Permiso, valor o duracion no validos." });
+      if (request.method === "PATCH" && apiPath === "/permissions") {
+        const body = parseApiInput(apiSchemas.permissionPatch, await readJsonBody(request));
         const context = await activeContext();
         const settings = await updatePermission(context.settingsPath, body.permission, body.value, body.durationMinutes ?? null);
         await log("permission_change", { profileId: context.profile.id, permission: body.permission, value: body.value, expiresAt: settings.permissionExpiresAt[body.permission] });
         return jsonResponse(response, 200, { permissions: effectivePermissions(settings), settings, restartRequired: false });
       }
 
-      if (request.method === "PATCH" && url.pathname === "/api/settings") {
-        const body = await readJsonBody(request);
+      if (request.method === "PATCH" && apiPath === "/settings") {
+        const body = parseApiInput(apiSchemas.settingsPatch, await readJsonBody(request));
         const context = await activeContext();
         const settings = await readSettings(context.settingsPath);
         const allowedBoolean = ["approvalRequired", "sensitiveProtection", "backupEnabled"];
         for (const key of allowedBoolean) if (key in body) {
-          if (typeof body[key] !== "boolean") return jsonResponse(response, 400, { error: "Valor no valido." });
           settings[key] = body[key];
         }
         if ("backupRetentionDays" in body) {
-          if (![null, 15, 30].includes(body.backupRetentionDays)) return jsonResponse(response, 400, { error: "Retencion no valida." });
           settings.backupRetentionDays = body.backupRetentionDays;
         }
         await writeSettings(context.settingsPath, settings);
@@ -362,9 +411,8 @@ export async function createControlPanel(options = {}) {
         return jsonResponse(response, 200, { settings });
       }
 
-      if (request.method === "POST" && url.pathname === "/api/profiles") {
-        const body = await readJsonBody(request);
-        if (typeof body.name !== "string" || !body.name.trim()) return jsonResponse(response, 400, { error: "Indica un nombre para el perfil." });
+      if (request.method === "POST" && apiPath === "/profiles") {
+        const body = parseApiInput(apiSchemas.profileCreate, await readJsonBody(request));
         const workspace = await validateWorkspace(body.workspace, dataRoot);
         const saved = await profiles();
         const profile = createProfile(body.name, workspace);
@@ -375,10 +423,10 @@ export async function createControlPanel(options = {}) {
         return jsonResponse(response, 201, { profiles: saved });
       }
 
-      if (request.method === "PATCH" && url.pathname === "/api/profiles/active") {
-        const body = await readJsonBody(request);
+      if (request.method === "PATCH" && apiPath === "/profiles/active") {
+        const body = parseApiInput(apiSchemas.activeProfilePatch, await readJsonBody(request));
         const saved = await profiles();
-        if (!saved.profiles.some((profile) => profile.id === body.id)) return jsonResponse(response, 404, { error: "Perfil no encontrado." });
+        if (!saved.profiles.some((profile) => profile.id === body.id)) return jsonResponse(response, 404, apiErrorPayload("NOT_FOUND", "Perfil no encontrado."));
         saved.activeProfileId = body.id;
         await writeProfiles(profilesPath, saved);
         await log("profile_selected", { profileId: body.id });
@@ -386,51 +434,60 @@ export async function createControlPanel(options = {}) {
         return jsonResponse(response, 200, await state());
       }
 
-      if (request.method === "DELETE" && url.pathname.startsWith("/api/profiles/")) {
-        const id = decodeURIComponent(url.pathname.split("/").pop());
+      if (request.method === "DELETE" && /^\/profiles\/[^/]+$/.test(apiPath || "")) {
+        const id = decodeURIComponent(apiPath.split("/").pop());
         const saved = await profiles();
-        if (saved.profiles.length <= 1) return jsonResponse(response, 409, { error: "Debe existir al menos un perfil." });
-        if (id === saved.activeProfileId) return jsonResponse(response, 409, { error: "No puedes borrar el perfil activo." });
+        if (saved.profiles.length <= 1) return jsonResponse(response, 409, apiErrorPayload("STATE_CONFLICT", "Debe existir al menos un perfil."));
+        if (id === saved.activeProfileId) return jsonResponse(response, 409, apiErrorPayload("STATE_CONFLICT", "No puedes borrar el perfil activo."));
         saved.profiles = saved.profiles.filter((profile) => profile.id !== id);
         await writeProfiles(profilesPath, saved);
         await log("profile_deleted", { profileId: id });
         return jsonResponse(response, 200, { profiles: saved });
       }
 
-      if (request.method === "POST" && url.pathname.startsWith("/api/approvals/")) {
-        const id = decodeURIComponent(url.pathname.split("/").pop());
-        const body = await readJsonBody(request);
-        if (!["approved", "rejected"].includes(body.status)) return jsonResponse(response, 400, { error: "Decision no valida." });
+      if (request.method === "POST" && /^\/approvals\/[^/]+$/.test(apiPath || "")) {
+        const id = decodeURIComponent(apiPath.split("/").pop());
+        const body = parseApiInput(apiSchemas.approvalDecision, await readJsonBody(request));
         const context = await activeContext();
         const approval = await decideApproval(context.approvalsPath, id, body.status, { profileId: context.profile.id, workspaceFingerprint: context.fingerprint });
-        if (!approval) return jsonResponse(response, 404, { error: "Solicitud pendiente no encontrada." });
+        if (!approval) return jsonResponse(response, 404, apiErrorPayload("NOT_FOUND", "Solicitud pendiente no encontrada."));
         await log(`approval_${body.status}`, { profileId: context.profile.id, requestId: id, path: approval.path, requestedAction: approval.action });
         return jsonResponse(response, 200, { approval });
       }
 
-      if (request.method === "POST" && url.pathname === "/api/backups/restore-latest") { const restored = await restoreLatestBackup(); return jsonResponse(response, 200, { restored }); }
-      if (request.method === "POST" && url.pathname === "/api/trash/restore-latest") { const restored = await restoreLatestTrash(); return jsonResponse(response, 200, { restored }); }
-      if (request.method === "PATCH" && url.pathname === "/api/autostart") { const body = await readJsonBody(request); if (typeof body.value !== "boolean") return jsonResponse(response, 400, { error: "Valor no valido." }); await setAutostart(body.value); return jsonResponse(response, 200, { autostart: await autostartEnabled() }); }
+      if (request.method === "GET" && apiPath === "/backups/latest/restore-precondition") {
+        return jsonResponse(response, 200, await backupRestorePrecondition());
+      }
+      if (request.method === "POST" && apiPath === "/backups/latest/restore") {
+        const body = parseApiInput(apiSchemas.backupRestore, await readJsonBody(request));
+        const restored = await restoreLatestBackup(body.expectedCurrentSha256 ?? null);
+        return jsonResponse(response, 200, { restored });
+      }
+      if (request.method === "POST" && apiPath === "/trash/latest/restore") { const restored = await restoreLatestTrash(); return jsonResponse(response, 200, { restored }); }
+      if (request.method === "PATCH" && apiPath === "/autostart") { const body = parseApiInput(apiSchemas.autostartPatch, await readJsonBody(request)); await setAutostart(body.value); return jsonResponse(response, 200, { autostart: await autostartEnabled() }); }
 
-      if (request.method === "POST" && url.pathname.startsWith("/api/tunnel/")) {
-        const action = url.pathname.split("/").pop();
-        if (action === "start") await startTunnel(); else if (action === "stop") await stopTunnel(); else if (action === "restart") await restartTunnel(); else return jsonResponse(response, 404, { error: "Accion desconocida." });
+      if (request.method === "POST" && apiPath?.startsWith("/tunnel/")) {
+        const action = apiPath.split("/").pop();
+        if (action === "start") await startTunnel(); else if (action === "stop") await stopTunnel(); else if (action === "restart") await restartTunnel(); else return jsonResponse(response, 404, apiErrorPayload("NOT_FOUND", "Accion desconocida."));
         return jsonResponse(response, 200, await state());
       }
-      return jsonResponse(response, 404, { error: "No encontrado." });
+      return jsonResponse(response, 404, apiErrorPayload("NOT_FOUND", "No encontrado."));
     } catch (error) {
       await log("panel_error", { result: "error", error: error instanceof Error ? error.message : "Error interno." }).catch(() => {});
-      return jsonResponse(response, 500, { error: error instanceof Error ? error.message : "Error interno." });
+      if (error instanceof ApiError) return jsonResponse(response, error.status, apiErrorPayload(error.code, error.message, error.details));
+      if (error?.code === "STATE_CONFLICT") return jsonResponse(response, 409, apiErrorPayload("STATE_CONFLICT", error.message));
+      return jsonResponse(response, 500, apiErrorPayload("INTERNAL_ERROR", "No se pudo completar la operacion."));
     }
   });
 
   await new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, host, resolve); });
-  const panelUrl = `http://${host}:${server.address().port}/ui#${token}`;
+  const origin = loopbackOrigin(host, server.address().port);
+  const panelUrl = `${origin}/ui#${token}`;
   const panelUrlPath = path.join(dataRoot, "panel-url.txt");
   await fs.mkdir(dataRoot, { recursive: true });
   await fs.writeFile(panelUrlPath, panelUrl, { encoding: "utf8", mode: 0o600 });
   if (options.autoStart !== false) await startTunnel();
-  return { url: `http://${host}:${server.address().port}`, panelUrl, token, state, startTunnel, stopTunnel, restartTunnel, async close() { await stopTunnel(); await new Promise((resolve) => server.close(resolve)); await fs.rm(panelUrlPath, { force: true }).catch(() => {}); } };
+  return { url: origin, panelUrl, token, state, startTunnel, stopTunnel, restartTunnel, async close() { await stopTunnel(); await new Promise((resolve) => server.close(resolve)); await fs.rm(panelUrlPath, { force: true }).catch(() => {}); } };
 }
 
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
@@ -439,8 +496,12 @@ if (isMain) {
   for (const name of controlPlaneSecretNames) delete process.env[name];
   const controller = await createControlPanel({ controlPlaneApiKey, testMode: process.env.CONTROL_PANEL_TEST_MODE === "1" });
   console.log("Panel de control seguro preparado.");
-  if (process.env.CONTROL_PANEL_OPEN_BROWSER === "1" && process.platform === "win32") {
-    const opener = spawn("cmd.exe", ["/c", "start", "", controller.panelUrl], { detached: true, env: buildSanitizedEnvironment(process.env), windowsHide: true, stdio: "ignore" });
+  if (process.env.CONTROL_PANEL_SHOW_URL === "1") console.log(`Panel local: ${controller.panelUrl}`);
+  if (process.env.CONTROL_PANEL_OPEN_BROWSER === "1") {
+    const command = process.platform === "win32" ? "cmd.exe" : process.platform === "darwin" ? "open" : "xdg-open";
+    const args = process.platform === "win32" ? ["/c", "start", "", controller.panelUrl] : [controller.panelUrl];
+    const opener = spawn(command, args, { detached: true, env: buildSanitizedEnvironment(process.env), windowsHide: true, stdio: "ignore" });
+    opener.on("error", () => {});
     opener.unref();
   }
   let closing = false;

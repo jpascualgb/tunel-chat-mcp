@@ -30,5 +30,5 @@ Rotate the OpenAI runtime credential immediately if it may have been disclosed.
 - Control-plane credentials are removed from the MCP server environment before it
   loads.
 
-The local Windows account remains the trust boundary. Malware or another process
+The local operating-system account remains the trust boundary. Malware or another process
 running as that same user can potentially control local files and processes.

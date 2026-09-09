@@ -13,13 +13,13 @@ const translations = {
     localControl: "Centro de seguridad local", authorizedWorkspace: "Perfil y espacio autorizados", lastMcp: "Última actividad MCP", latency: "Respuesta local", uptime: "Tiempo activo",
     connected: "Conectado", connecting: "Iniciando conexión…", stopped: "Apagado", readyDetail: "ChatGPT puede usar las herramientas autorizadas", startingDetail: "El proceso está completando la conexión", stoppedDetail: "El panel sigue activo; el túnel está detenido",
     filePermissions: "Permisos de archivos", permissionsHelp: "Actívalos de forma temporal o sin límite de tiempo.", activationDuration: "Duración al activar", unlimited: "Sin límite",
-    tunnelControl: "Control del túnel", controlHelp: "Inicia, detén o reinicia esta conexión.", start: "Iniciar", stop: "Apagar", restart: "Reiniciar", windowsStart: "Iniciar con Windows", windowsStartHelp: "Arranca el túnel al iniciar sesión.",
+    tunnelControl: "Control del túnel", controlHelp: "Inicia, detén o reinicia esta conexión.", start: "Iniciar", stop: "Apagar", restart: "Reiniciar", windowsStart: "Iniciar con el sistema", windowsStartHelp: "Arranca el túnel al iniciar sesión.",
     securityMode: "Seguridad y autonomía", securityHelp: "Decide cuánto control conservar antes de cada cambio.", approvalTitle: "Aprobar cada modificación", approvalHelp: "Muestra el archivo y una vista previa antes de crear, modificar o eliminar.", autonomousTitle: "Modo autónomo activo", autonomousHelp: "La IA podrá realizar todos los cambios permitidos sin pedir aprobación individual.", sensitiveTitle: "Proteger archivos sensibles", sensitiveHelp: "Bloquea .env, claves, credenciales, .git y enlaces que salgan del espacio autorizado.",
     pendingApprovals: "Aprobaciones pendientes", approvalsHelp: "Revisa el antes y después; cada aprobación solo sirve una vez.", noApprovals: "No hay operaciones esperando aprobación.", before: "Antes", after: "Después", approve: "Permitir", reject: "Rechazar", createAction: "Crear", overwriteAction: "Modificar", deleteAction: "Eliminar",
     backups: "Copias y recuperación", backupsHelp: "Conserva versiones previas y recupera el último cambio.", createBackups: "Crear copias automáticas", retention: "Eliminar cada copia después de", keepForever: "No eliminar automáticamente", undoModification: "Deshacer última modificación", restoreDeleted: "Restaurar último eliminado", copies: "copias disponibles",
     profiles: "Perfiles de carpetas", profilesHelp: "Cada perfil aísla permisos, aprobaciones y copias; al cambiar, el túnel se reinicia.", activeProfile: "Perfil activo", deleteProfile: "Eliminar perfil seleccionado", profileNameLabel: "Nombre", folderPath: "Ruta completa de la carpeta", addProfile: "Añadir perfil",
     auditLog: "Registro de auditoría", auditHelp: "Acciones, rutas, resultado y origen de cada operación.", refresh: "Actualizar", date: "Fecha", source: "Origen", action: "Acción", file: "Archivo / detalle", result: "Resultado", noActivity: "Todavía no hay actividad registrada.",
-    localOnly: "Solo accesible desde este PC · 127.0.0.1", technicalPanel: "Panel técnico", cancel: "Cancelar", confirm: "Confirmar", saved: "Configuración guardada.", completed: "Acción completada.", genericError: "No se pudo completar la operación.", secureLinkRequired: "Acceso local protegido", secureLinkHelp: "Abre el panel con open-panel.ps1 para obtener un enlace efímero.",
+    localOnly: "Solo accesible desde este equipo · loopback", technicalPanel: "Panel técnico", cancel: "Cancelar", confirm: "Confirmar", saved: "Configuración guardada.", completed: "Acción completada.", genericError: "No se pudo completar la operación.", secureLinkRequired: "Acceso local protegido", secureLinkHelp: "Abre el enlace efímero que muestra el iniciador local.",
     disableApprovalTitle: "¿Activar el modo autónomo?", disableApprovalBody: "La IA podrá crear, modificar y eliminar sin aprobación individual mientras los permisos correspondientes estén activos.", enableAutonomous: "Activar modo autónomo",
     stopTitle: "¿Apagar el túnel?", stopBody: "ChatGPT perderá temporalmente el acceso a la carpeta.", stopConfirm: "Apagar túnel", restartTitle: "¿Reiniciar el túnel?", restartBody: "La conexión se interrumpirá durante unos segundos.", restartConfirm: "Reiniciar",
     restoreBackupTitle: "¿Deshacer la última modificación?", restoreBackupBody: "Se restaurará la versión guardada más reciente.", restoreTrashTitle: "¿Restaurar el último archivo eliminado?", restoreTrashBody: "El archivo volverá a su ruta original.", profileSwitchTitle: "¿Cambiar de perfil?", profileSwitchBody: "El túnel se reiniciará para autorizar únicamente la nueva carpeta.", deleteProfileTitle: "¿Eliminar este perfil?", deleteProfileBody: "La carpeta y sus archivos no se borrarán.",
@@ -29,13 +29,13 @@ const translations = {
     localControl: "Local security center", authorizedWorkspace: "Authorized profile and workspace", lastMcp: "Last MCP activity", latency: "Local response", uptime: "Uptime",
     connected: "Connected", connecting: "Starting connection…", stopped: "Stopped", readyDetail: "ChatGPT can use the authorized tools", startingDetail: "The process is completing the connection", stoppedDetail: "The panel is available; the tunnel is stopped",
     filePermissions: "File permissions", permissionsHelp: "Enable them temporarily or without a time limit.", activationDuration: "Duration when enabled", unlimited: "Unlimited",
-    tunnelControl: "Tunnel control", controlHelp: "Start, stop or restart this connection.", start: "Start", stop: "Stop", restart: "Restart", windowsStart: "Start with Windows", windowsStartHelp: "Starts the tunnel when you sign in.",
+    tunnelControl: "Tunnel control", controlHelp: "Start, stop or restart this connection.", start: "Start", stop: "Stop", restart: "Restart", windowsStart: "Start with the system", windowsStartHelp: "Starts the tunnel when you sign in.",
     securityMode: "Security and autonomy", securityHelp: "Choose how much control to keep before each change.", approvalTitle: "Approve every change", approvalHelp: "Shows the file and a preview before creating, changing or deleting.", autonomousTitle: "Autonomous mode active", autonomousHelp: "AI can perform all allowed changes without individual approval.", sensitiveTitle: "Protect sensitive files", sensitiveHelp: "Blocks .env, keys, credentials, .git and links outside the workspace.",
     pendingApprovals: "Pending approvals", approvalsHelp: "Review before and after; each approval can be used once.", noApprovals: "No operations are waiting for approval.", before: "Before", after: "After", approve: "Allow", reject: "Reject", createAction: "Create", overwriteAction: "Modify", deleteAction: "Delete",
     backups: "Backups and recovery", backupsHelp: "Keep previous versions and recover the latest change.", createBackups: "Create automatic backups", retention: "Delete each copy after", keepForever: "Never delete automatically", undoModification: "Undo latest modification", restoreDeleted: "Restore latest deleted file", copies: "copies available",
     profiles: "Folder profiles", profilesHelp: "Each profile isolates permissions, approvals and backups; switching restarts the tunnel.", activeProfile: "Active profile", deleteProfile: "Delete selected profile", profileNameLabel: "Name", folderPath: "Full folder path", addProfile: "Add profile",
     auditLog: "Audit log", auditHelp: "Actions, paths, result and source for every operation.", refresh: "Refresh", date: "Date", source: "Source", action: "Action", file: "File / detail", result: "Result", noActivity: "No activity has been recorded yet.",
-    localOnly: "Only accessible from this PC · 127.0.0.1", technicalPanel: "Technical panel", cancel: "Cancel", confirm: "Confirm", saved: "Configuration saved.", completed: "Action completed.", genericError: "The operation could not be completed.", secureLinkRequired: "Protected local access", secureLinkHelp: "Open the panel with open-panel.ps1 to obtain an ephemeral link.",
+    localOnly: "Only accessible from this device · loopback", technicalPanel: "Technical panel", cancel: "Cancel", confirm: "Confirm", saved: "Configuration saved.", completed: "Action completed.", genericError: "The operation could not be completed.", secureLinkRequired: "Protected local access", secureLinkHelp: "Open the ephemeral link shown by the local launcher.",
     disableApprovalTitle: "Enable autonomous mode?", disableApprovalBody: "AI will be able to create, modify and delete without individual approval while the related permissions are enabled.", enableAutonomous: "Enable autonomous mode",
     stopTitle: "Stop the tunnel?", stopBody: "ChatGPT will temporarily lose access to the folder.", stopConfirm: "Stop tunnel", restartTitle: "Restart the tunnel?", restartBody: "The connection will be interrupted for a few seconds.", restartConfirm: "Restart",
     restoreBackupTitle: "Undo the latest modification?", restoreBackupBody: "The most recent saved version will be restored.", restoreTrashTitle: "Restore the latest deleted file?", restoreTrashBody: "The file will return to its original path.", profileSwitchTitle: "Switch profile?", profileSwitchBody: "The tunnel will restart and authorize only the new folder.", deleteProfileTitle: "Delete this profile?", deleteProfileBody: "The folder and its files will not be deleted.",
@@ -49,7 +49,7 @@ function escapeHtml(value) { return String(value ?? "").replace(/[&<>"']/g, (cha
 async function api(url, options = {}) {
   const response = await fetch(url, { ...options, headers: { "Content-Type": "application/json", "X-Control-Token": token, ...(options.headers || {}) } });
   const payload = await response.json();
-  if (!response.ok) throw new Error(payload.error || t("genericError"));
+  if (!response.ok) throw new Error(payload.error?.message || t("genericError"));
   return payload;
 }
 
@@ -71,7 +71,9 @@ function closeModal() { document.getElementById("modalBackdrop").hidden = true; 
 
 function formatTime(timestamp) {
   if (!timestamp) return "—";
-  return new Intl.DateTimeFormat(language === "es" ? "es-ES" : "en-GB", { dateStyle: "short", timeStyle: "medium" }).format(new Date(timestamp));
+  const date = new Date(timestamp);
+  if (!Number.isFinite(date.getTime())) return "—";
+  return new Intl.DateTimeFormat(language === "es" ? "es-ES" : "en-GB", { dateStyle: "short", timeStyle: "medium" }).format(date);
 }
 function formatDuration(seconds) {
   if (!seconds) return "—";
@@ -105,7 +107,7 @@ function renderApprovals() {
   document.getElementById("approvalCount").textContent = approvals.length;
   const list = document.getElementById("approvalList");
   if (!approvals.length) { list.innerHTML = `<div class="empty-state">${t("noApprovals")}</div>`; return; }
-  list.innerHTML = approvals.map((request) => `<article class="approval-card"><div class="approval-head"><div><span class="action-pill">${escapeHtml(actionLabel(request.action))}</span><strong>${escapeHtml(request.path)}</strong><small>${formatTime(request.createdAt)}</small></div><div class="approval-actions"><button class="button secondary" data-decision="rejected" data-id="${request.id}">${t("reject")}</button><button class="button primary" data-decision="approved" data-id="${request.id}">${t("approve")}</button></div></div><div class="preview-grid">${previewBlock(t("before"), request.preview?.before)}${previewBlock(t("after"), request.preview?.after)}</div></article>`).join("");
+  list.innerHTML = approvals.map((request) => `<article class="approval-card"><div class="approval-head"><div><span class="action-pill">${escapeHtml(actionLabel(request.action))}</span><strong>${escapeHtml(request.path)}</strong><small>${formatTime(request.createdAt)}</small></div><div class="approval-actions"><button class="button secondary" data-decision="rejected" data-id="${escapeHtml(request.id)}">${t("reject")}</button><button class="button primary" data-decision="approved" data-id="${escapeHtml(request.id)}">${t("approve")}</button></div></div><div class="preview-grid">${previewBlock(t("before"), request.preview?.before)}${previewBlock(t("after"), request.preview?.after)}</div></article>`).join("");
   list.querySelectorAll("button[data-decision]").forEach((button) => button.addEventListener("click", () => decideApproval(button.dataset.id, button.dataset.decision)));
 }
 
@@ -149,30 +151,30 @@ function renderState() {
 }
 
 async function refreshState({ quiet = false } = {}) {
-  try { currentState = await api("/api/state"); renderState(); } catch (error) { if (!quiet) showToast(error.message, true); }
+  try { currentState = await api("/api/v1/state"); renderState(); } catch (error) { if (!quiet) showToast(error.message, true); }
 }
 
 async function changePermission(input) {
   const durationValue = document.getElementById("permissionDuration").value;
   const durationMinutes = input.checked && durationValue !== "unlimited" ? Number(durationValue) : null;
   input.disabled = true;
-  try { await api("/api/permissions", { method: "PATCH", body: JSON.stringify({ permission: input.dataset.permission, value: input.checked, durationMinutes }) }); showToast(t("saved")); }
+  try { await api("/api/v1/permissions", { method: "PATCH", body: JSON.stringify({ permission: input.dataset.permission, value: input.checked, durationMinutes }) }); showToast(t("saved")); }
   catch (error) { showToast(error.message, true); }
   finally { await refreshState({ quiet: true }); }
 }
 
 async function patchSettings(changes) {
-  try { await api("/api/settings", { method: "PATCH", body: JSON.stringify(changes) }); showToast(t("saved")); await refreshState({ quiet: true }); }
+  try { await api("/api/v1/settings", { method: "PATCH", body: JSON.stringify(changes) }); showToast(t("saved")); await refreshState({ quiet: true }); }
   catch (error) { showToast(error.message, true); await refreshState({ quiet: true }); }
 }
 
 async function decideApproval(id, status) {
-  try { await api(`/api/approvals/${encodeURIComponent(id)}`, { method: "POST", body: JSON.stringify({ status }) }); showToast(t("completed")); await refreshState({ quiet: true }); }
+  try { await api(`/api/v1/approvals/${encodeURIComponent(id)}`, { method: "POST", body: JSON.stringify({ status }) }); showToast(t("completed")); await refreshState({ quiet: true }); }
   catch (error) { showToast(error.message, true); }
 }
 
 async function performTunnelAction(action) {
-  try { await api(`/api/tunnel/${action}`, { method: "POST", body: "{}" }); showToast(t("completed")); await refreshState({ quiet: true }); }
+  try { await api(`/api/v1/tunnel/${action}`, { method: "POST", body: "{}" }); showToast(t("completed")); await refreshState({ quiet: true }); }
   catch (error) { showToast(error.message, true); }
 }
 
@@ -196,12 +198,12 @@ document.getElementById("approvalToggle").addEventListener("change", (event) => 
 document.getElementById("sensitiveToggle").addEventListener("change", (event) => patchSettings({ sensitiveProtection: event.target.checked }));
 document.getElementById("backupToggle").addEventListener("change", (event) => patchSettings({ backupEnabled: event.target.checked }));
 document.getElementById("backupRetention").addEventListener("change", (event) => patchSettings({ backupRetentionDays: event.target.value === "unlimited" ? null : Number(event.target.value) }));
-document.getElementById("autostartToggle").addEventListener("change", async (event) => { try { await api("/api/autostart", { method: "PATCH", body: JSON.stringify({ value: event.target.checked }) }); showToast(t("saved")); } catch (error) { showToast(error.message, true); } finally { await refreshState({ quiet: true }); } });
-document.getElementById("restoreBackup").addEventListener("click", () => openModal({ title: t("restoreBackupTitle"), body: t("restoreBackupBody"), action: async () => { await api("/api/backups/restore-latest", { method: "POST", body: "{}" }); showToast(t("completed")); await refreshState({ quiet: true }); } }));
-document.getElementById("restoreTrash").addEventListener("click", () => openModal({ title: t("restoreTrashTitle"), body: t("restoreTrashBody"), action: async () => { await api("/api/trash/restore-latest", { method: "POST", body: "{}" }); showToast(t("completed")); await refreshState({ quiet: true }); } }));
-document.getElementById("profileSelect").addEventListener("change", (event) => { const id = event.target.value; openModal({ title: t("profileSwitchTitle"), body: t("profileSwitchBody"), action: async () => { await api("/api/profiles/active", { method: "PATCH", body: JSON.stringify({ id }) }); showToast(t("completed")); await refreshState({ quiet: true }); } }); renderState(); });
-document.getElementById("deleteProfile").addEventListener("click", () => { const id = document.getElementById("profileSelect").value; openModal({ title: t("deleteProfileTitle"), body: t("deleteProfileBody"), action: async () => { await api(`/api/profiles/${encodeURIComponent(id)}`, { method: "DELETE" }); showToast(t("completed")); await refreshState({ quiet: true }); } }); });
-document.getElementById("profileForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await api("/api/profiles", { method: "POST", body: JSON.stringify({ name: document.getElementById("newProfileName").value, workspace: document.getElementById("newProfilePath").value }) }); event.target.reset(); showToast(t("completed")); await refreshState({ quiet: true }); } catch (error) { showToast(error.message, true); } });
+document.getElementById("autostartToggle").addEventListener("change", async (event) => { try { await api("/api/v1/autostart", { method: "PATCH", body: JSON.stringify({ value: event.target.checked }) }); showToast(t("saved")); } catch (error) { showToast(error.message, true); } finally { await refreshState({ quiet: true }); } });
+document.getElementById("restoreBackup").addEventListener("click", () => openModal({ title: t("restoreBackupTitle"), body: t("restoreBackupBody"), action: async () => { const precondition = await api("/api/v1/backups/latest/restore-precondition"); await api("/api/v1/backups/latest/restore", { method: "POST", body: JSON.stringify({ expectedCurrentSha256: precondition.currentSha256 }) }); showToast(t("completed")); await refreshState({ quiet: true }); } }));
+document.getElementById("restoreTrash").addEventListener("click", () => openModal({ title: t("restoreTrashTitle"), body: t("restoreTrashBody"), action: async () => { await api("/api/v1/trash/latest/restore", { method: "POST", body: "{}" }); showToast(t("completed")); await refreshState({ quiet: true }); } }));
+document.getElementById("profileSelect").addEventListener("change", (event) => { const id = event.target.value; openModal({ title: t("profileSwitchTitle"), body: t("profileSwitchBody"), action: async () => { await api("/api/v1/profiles/active", { method: "PATCH", body: JSON.stringify({ id }) }); showToast(t("completed")); await refreshState({ quiet: true }); } }); renderState(); });
+document.getElementById("deleteProfile").addEventListener("click", () => { const id = document.getElementById("profileSelect").value; openModal({ title: t("deleteProfileTitle"), body: t("deleteProfileBody"), action: async () => { await api(`/api/v1/profiles/${encodeURIComponent(id)}`, { method: "DELETE" }); showToast(t("completed")); await refreshState({ quiet: true }); } }); });
+document.getElementById("profileForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await api("/api/v1/profiles", { method: "POST", body: JSON.stringify({ name: document.getElementById("newProfileName").value, workspace: document.getElementById("newProfilePath").value }) }); event.target.reset(); showToast(t("completed")); await refreshState({ quiet: true }); } catch (error) { showToast(error.message, true); } });
 document.getElementById("modalCancel").addEventListener("click", () => { closeModal(); renderState(); });
 document.getElementById("modalClose").addEventListener("click", () => { closeModal(); renderState(); });
 document.getElementById("modalBackdrop").addEventListener("click", (event) => { if (event.target === event.currentTarget) { closeModal(); renderState(); } });

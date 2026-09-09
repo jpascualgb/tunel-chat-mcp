@@ -4,7 +4,9 @@ Servidor MCP local para trabajar con archivos privados desde ChatGPT mediante
 [OpenAI Secure MCP Tunnel](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels),
 sin abrir puertos entrantes ni publicar el servidor local en Internet.
 
-> Estado: versión local funcional y endurecida, distribuida bajo Apache-2.0. La
+> Estado: versión local funcional y endurecida en Windows, distribuida bajo
+> Apache-2.0. La implementación de macOS y Linux tiene pruebas automáticas, pero
+> aún requiere validación funcional en equipos reales. La
 > instalación privada de `tunnel-client` debe sustituirse por las instrucciones de
 > distribución oficiales que correspondan.
 
@@ -18,7 +20,7 @@ sin abrir puertos entrantes ni publicar el servidor local en Internet.
 - Exigir una aprobación local para cada escritura o permitir un modo autónomo.
 - Activar permisos por 10, 30 o 60 minutos, o sin límite temporal.
 - Mantener varios perfiles de carpetas completamente aislados.
-- Controlar el túnel, el inicio con Windows y los permisos desde un panel ES/EN.
+- Controlar el túnel, el inicio automático nativo y los permisos desde un panel ES/EN.
 
 No existe ninguna herramienta para ejecutar comandos, PowerShell o programas.
 
@@ -34,7 +36,8 @@ No existe ninguna herramienta para ejecutar comandos, PowerShell o programas.
   propio túnel.
 - Las copias llevan perfil, huella de carpeta y SHA-256. Los metadatos se validan
   antes de listar, limpiar o restaurar.
-- La credencial del plano de control se cifra con DPAPI. Durante la ejecución se
+- La credencial del plano de control se protege con DPAPI, Keychain o Secret
+  Service, según el sistema. Durante la ejecución se
   retira del entorno del controlador, solo se añade deliberadamente al proceso de
   `tunnel-client` y se elimina antes de cargar el código del servidor MCP o iniciar
   procesos auxiliares. La decisión está documentada en
@@ -44,16 +47,18 @@ No existe ninguna herramienta para ejecutar comandos, PowerShell o programas.
 - La auditoría rota automáticamente y encadena criptográficamente sus eventos para
   detectar modificaciones accidentales o posteriores.
 
-El límite final de confianza es la cuenta local de Windows. Otro proceso malicioso
+El límite final de confianza es la cuenta local del sistema. Otro proceso malicioso
 ejecutado como el mismo usuario podría manipular archivos o procesos locales.
 
 ## Datos privados
 
 El código no contiene perfiles, rutas personales, credenciales, aprobaciones,
-copias ni registros. En Windows se guardan por defecto en:
+copias ni registros. Las ubicaciones predeterminadas son:
 
 ```text
 %LOCALAPPDATA%\OpenAI-Secure-MCP-Tunnel
+~/Library/Application Support/OpenAI-Secure-MCP-Tunnel
+${XDG_STATE_HOME:-~/.local/state}/openai-secure-mcp-tunnel
 ```
 
 La carpeta `.tunnel-client`, `vendor`, `.env` y los registros están excluidos por
@@ -62,24 +67,51 @@ Git y rota cualquier credencial que haya llegado a un commit.
 
 ## Requisitos
 
-- Windows 10 u 11.
+- Windows 10/11, macOS o Linux con sesión de usuario.
 - Node.js 22 o posterior.
 - Acceso a Secure MCP Tunnel en la organización de OpenAI.
-- Una copia autorizada de `tunnel-client.exe` en
-  `vendor\tunnel-client\tunnel-client.exe`.
+- Una copia autorizada de `tunnel-client`. En Windows se detecta la copia de
+  `vendor\tunnel-client\tunnel-client.exe`; en macOS/Linux se indica con `--client`
+  o `MCP_TUNNEL_CLIENT_PATH` si no está en `PATH`.
+- Keychain disponible en macOS o un proveedor Secret Service desbloqueado en Linux.
 
 ## Primera configuración
 
-1. Protege la credencial de ejecución usando el flujo local de `protect-key.ps1`.
-2. Ejecuta:
+1. Guarda la credencial sin incluirla en argumentos:
+
+```text
+node cli.mjs credential set
+```
+
+2. Configura y verifica el cliente:
+
+```text
+node cli.mjs setup --workspace "RUTA" --tunnel-id "tunnel_<32_caracteres_minusculos_o_digitos>" --client "RUTA_CLIENTE"
+```
+
+3. Inicia el servicio:
+
+```text
+node cli.mjs run
+```
+
+Con el panel iniciado, el ciclo de vida también puede controlarse desde terminal:
+
+```text
+node cli.mjs tunnel status
+node cli.mjs tunnel stop
+node cli.mjs tunnel start
+node cli.mjs tunnel restart
+```
+
+En Windows se conservan los flujos compatibles de PowerShell:
 
 ```powershell
 cd "<RUTA_DEL_PROYECTO>"
 .\setup-tunnel.ps1
 ```
 
-3. Introduce el identificador `tunnel_...` cuando se solicite.
-4. Comprueba que el diagnóstico termina en `RESULT ok`.
+Comprueba que el diagnóstico termina en `RESULT ok`.
 
 `setup-tunnel.ps1` configura el MCP con `mcp-launcher.mjs`, que limpia las
 credenciales de OpenAI antes de importar `server.mjs`.
@@ -107,9 +139,17 @@ ChatGPT.com](TUTORIAL-CHATGPT.md). Explica paso a paso cómo crear la app en mod
 desarrollador, seleccionar el túnel, probar primero el acceso de solo lectura,
 aprobar una modificación y solucionar problemas de conexión.
 
-## Inicio con Windows
+## Inicio automático
 
-Después de iniciar manualmente al menos una vez:
+Después de configurar el túnel:
+
+```text
+node cli.mjs autostart enable
+node cli.mjs autostart status
+node cli.mjs autostart disable
+```
+
+En Windows también siguen disponibles:
 
 ```powershell
 .\enable-autostart.ps1
@@ -122,6 +162,12 @@ Para desactivarlo:
 ```
 
 También puede cambiarse desde el panel.
+
+Para retirar el arranque y la credencial nativa sin borrar registros ni copias:
+
+```text
+node cli.mjs uninstall --yes
+```
 
 ## Panel de control
 
@@ -149,7 +195,10 @@ de aprobaciones.
 
 ## Archivos principales
 
-- `control-panel.mjs`: API y ciclo de vida local.
+- `cli.mjs`: interfaz portátil de configuración, inicio y autostart.
+- `platform-runtime.mjs`: almacenes de credenciales y servicios nativos.
+- `control-api-contract.mjs`: contrato validado de `/api/v1`.
+- `control-panel.mjs`: backend y ciclo de vida local.
 - `panel/`: interfaz adaptable ES/EN.
 - `server.mjs`: herramientas MCP y límites del espacio autorizado.
 - `mcp-launcher.mjs`: saneamiento del entorno antes de cargar el MCP.
@@ -161,7 +210,7 @@ de aprobaciones.
 - `SECURITY.md`: política de seguridad y divulgación responsable.
 - `SECURITY-AUDIT.md`: última auditoría y riesgos residuales conocidos.
 - `TUTORIAL-CHATGPT.md`: conexión, prueba y desconexión desde ChatGPT.com.
-- `ROADMAP.md`: soporte multiplataforma y evolución segura de la API local.
+- `docs/control-api-v1.md`: interfaz local versionada.
 - `docs/decisions/`: decisiones de arquitectura y sus límites de seguridad.
 
 ## Publicación
@@ -170,7 +219,8 @@ El repositorio se mantiene privado. Antes de hacerlo público:
 
 1. Confirmar las condiciones de redistribución de `tunnel-client`; `vendor/` está
    excluido del repositorio.
-2. Resolver los hallazgos de prioridad alta de [SECURITY-AUDIT.md](SECURITY-AUDIT.md).
+2. Completar las validaciones reales y las comprobaciones del binario externo
+   indicadas en [SECURITY-AUDIT.md](SECURITY-AUDIT.md).
 3. Volver a ejecutar las pruebas, la auditoría de dependencias y un escaneo de
    secretos. La integración continua ya ejecuta pruebas y `npm audit` en cada
    cambio propuesto y semanalmente.

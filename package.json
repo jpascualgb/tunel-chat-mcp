@@ -4,10 +4,16 @@
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
+  "bin": {
+    "secure-mcp-tunnel": "./cli.mjs"
+  },
   "scripts": {
     "start": "node server.mjs",
     "panel": "node control-panel.mjs",
-    "test": "node test-process-environment.mjs && node test-server.mjs && node test-control-panel.mjs"
+    "cli": "node cli.mjs",
+    "test": "node test-process-environment.mjs && node test-platform-runtime.mjs && node test-cli.mjs && node test-secret-scanner.mjs && node test-security-regressions.mjs && node test-server.mjs && node test-control-panel.mjs",
+    "check": "node scripts/check-source.mjs",
+    "security:scan": "node scripts/scan-secrets.mjs"
   },
   "engines": {
     "node": ">=22"
