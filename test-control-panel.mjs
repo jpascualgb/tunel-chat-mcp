@@ -130,7 +130,7 @@ try {
   const backupId = `1700000000000-11111111-1111-4111-8111-111111111111`;
   await fs.rename(path.join(backupsRoot, "backup-test.bin"), path.join(backupsRoot, `${backupId}.bin`));
   await fs.writeFile(path.join(backupsRoot, `${backupId}.json`), JSON.stringify({
-    id: backupId, createdAt: new Date().toISOString(), profileId: "test", workspaceFingerprint: workspaceFingerprint(temporaryRoot), action: "sobrescribir",
+    id: backupId, createdAt: new Date().toISOString(), profileId: "test", workspaceFingerprint: workspaceFingerprint(profile.workspace), action: "sobrescribir",
     originalPath: "restore.txt", backupFile: `${backupId}.bin`, size: 8, sha256: "1cc40893501a6a30f02e8b24ee70ba2dff7115af4783a67fda2dc4cba4c895d5",
   }));
   const restorePrecondition = await api("/api/v1/backups/latest/restore-precondition");
