@@ -11,6 +11,7 @@ import {
 } from "./process-environment.mjs";
 import {
   appendActivity,
+  canonicalPathForComparison,
   createProfile,
   decideApproval,
   effectivePermissions,
@@ -125,10 +126,12 @@ async function validateWorkspace(input, protectedDataRoot = defaultDataRoot) {
   const workspace = await fs.realpath(input.trim().replace(/^"|"$/g, ""));
   if (!(await fs.stat(workspace)).isDirectory()) throw new Error("La ruta no es una carpeta.");
   if (path.parse(workspace).root.toLowerCase() === workspace.replace(/[\\/]$/, "").toLowerCase()) throw new Error("No se permite autorizar una unidad completa.");
-  if (pathsOverlap(workspace, projectRoot)) throw new Error("No se puede autorizar la carpeta del tunel, una carpeta superior ni una carpeta interior.");
-  if (pathsOverlap(workspace, protectedDataRoot)) throw new Error("No se puede autorizar la carpeta que contiene los datos privados del tunel ni una carpeta superior.");
+  const canonicalProjectRoot = await canonicalPathForComparison(projectRoot);
+  const canonicalDataRoot = await canonicalPathForComparison(protectedDataRoot);
+  if (pathsOverlap(workspace, canonicalProjectRoot)) throw new Error("No se puede autorizar la carpeta del tunel, una carpeta superior ni una carpeta interior.");
+  if (pathsOverlap(workspace, canonicalDataRoot)) throw new Error("No se puede autorizar la carpeta que contiene los datos privados del tunel ni una carpeta superior.");
   const windowsRoot = process.env.SystemRoot;
-  if (windowsRoot && pathsOverlap(workspace, windowsRoot)) throw new Error("No se puede autorizar la carpeta del sistema de Windows.");
+  if (windowsRoot && pathsOverlap(workspace, await canonicalPathForComparison(windowsRoot))) throw new Error("No se puede autorizar la carpeta del sistema de Windows.");
   return workspace;
 }
 

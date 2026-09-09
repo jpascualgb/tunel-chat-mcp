@@ -8,8 +8,11 @@ import { profileDataPaths, workspaceFingerprint } from "./secure-store.mjs";
 
 const temporaryBase = await fs.mkdtemp(path.join(os.tmpdir(), "pc-personal-panel-test-"));
 const temporaryRoot = path.join(temporaryBase, "workspace");
-const dataRoot = path.join(temporaryBase, "data");
+const physicalDataRoot = path.join(temporaryBase, "data-real");
+const dataRoot = path.join(temporaryBase, "data-alias");
 await fs.mkdir(temporaryRoot);
+await fs.mkdir(physicalDataRoot);
+await fs.symlink(physicalDataRoot, dataRoot, process.platform === "win32" ? "junction" : "dir");
 const profilesPath = path.join(dataRoot, "profiles.json");
 const profile = { id: "test", name: "Pruebas", workspace: temporaryRoot };
 const { settingsPath: permissionsPath, approvalsPath, backupsRoot } = profileDataPaths(dataRoot, profile);
@@ -113,7 +116,7 @@ try {
   const blockedDataResponse = await fetch(`${controller.url}/api/v1/profiles`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Control-Token": controller.token },
-    body: JSON.stringify({ name: "Datos privados", workspace: dataRoot }),
+    body: JSON.stringify({ name: "Datos privados", workspace: physicalDataRoot }),
   });
   if (blockedDataResponse.ok) throw new Error("El panel permitio autorizar sus propios datos privados.");
 

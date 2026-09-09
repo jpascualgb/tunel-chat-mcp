@@ -71,6 +71,24 @@ export function normalizePathForIdentity(value, platform = process.platform) {
   return platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
+export async function canonicalPathForComparison(value) {
+  const resolved = path.resolve(value);
+  const missingSegments = [];
+  let current = resolved;
+  while (true) {
+    try {
+      const existing = await fs.realpath(current);
+      return path.join(existing, ...missingSegments.reverse());
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+      const parent = path.dirname(current);
+      if (parent === current) return resolved;
+      missingSegments.push(path.basename(current));
+      current = parent;
+    }
+  }
+}
+
 export function workspaceFingerprint(workspace) {
   return createHash("sha256").update(normalizePathForIdentity(workspace)).digest("hex");
 }

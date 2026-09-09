@@ -16,7 +16,7 @@ import {
   validateControlPlaneKey,
 } from "./platform-runtime.mjs";
 import { buildSanitizedEnvironment, buildTunnelClientEnvironment } from "./process-environment.mjs";
-import { createProfile, normalizePathForIdentity, readProfiles, writeProfiles } from "./secure-store.mjs";
+import { canonicalPathForComparison, createProfile, normalizePathForIdentity, readProfiles, writeProfiles } from "./secure-store.mjs";
 
 const projectRoot = path.dirname(fileURLToPath(import.meta.url));
 
@@ -108,10 +108,12 @@ async function validateWorkspace(workspaceValue, dataRoot) {
   const workspace = await fs.realpath(path.resolve(workspaceValue));
   if (!(await fs.stat(workspace)).isDirectory()) throw new Error("La carpeta autorizada no es valida.");
   if (path.parse(workspace).root === workspace) throw new Error("No se permite autorizar la raiz completa.");
-  const relativeProject = path.relative(workspace, projectRoot);
-  const relativeWorkspace = path.relative(projectRoot, workspace);
-  const relativeData = path.relative(workspace, dataRoot);
-  const relativeWorkspaceFromData = path.relative(dataRoot, workspace);
+  const canonicalProjectRoot = await canonicalPathForComparison(projectRoot);
+  const canonicalDataRoot = await canonicalPathForComparison(dataRoot);
+  const relativeProject = path.relative(workspace, canonicalProjectRoot);
+  const relativeWorkspace = path.relative(canonicalProjectRoot, workspace);
+  const relativeData = path.relative(workspace, canonicalDataRoot);
+  const relativeWorkspaceFromData = path.relative(canonicalDataRoot, workspace);
   if ((!relativeProject.startsWith("..") && !path.isAbsolute(relativeProject)) || (!relativeWorkspace.startsWith("..") && !path.isAbsolute(relativeWorkspace))) {
     throw new Error("La carpeta autorizada no puede contener el programa ni estar dentro de el.");
   }
@@ -119,7 +121,7 @@ async function validateWorkspace(workspaceValue, dataRoot) {
     throw new Error("La carpeta autorizada y los datos privados no pueden solaparse.");
   }
   if (process.platform === "win32" && process.env.SystemRoot) {
-    const relativeSystem = path.relative(process.env.SystemRoot, workspace);
+    const relativeSystem = path.relative(await canonicalPathForComparison(process.env.SystemRoot), workspace);
     if (!relativeSystem.startsWith("..") && !path.isAbsolute(relativeSystem)) throw new Error("No se permite autorizar la carpeta de Windows.");
   }
   return workspace;

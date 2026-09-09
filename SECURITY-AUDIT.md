@@ -35,6 +35,8 @@ macOS/Linux y la procedencia/licencia del binario privado `tunnel-client`.
   clave solo se incorpora al entorno dedicado de `tunnel-client` y se elimina
   antes de cargar el servidor MCP o iniciar auxiliares.
 - El panel rechaza cualquier dirección que no sea `127.0.0.1` o `::1`.
+- Las comparaciones entre el espacio autorizado, el código y los datos privados
+  canonizan alias y enlaces de directorio antes de evaluar solapamientos.
 - Los procesos auxiliares de credenciales y servicios reciben un entorno saneado;
   no heredan claves OpenAI presentes accidentalmente en la sesión del usuario.
 - Los nombres de ejecutable disponibles en `PATH` ya no se convierten en rutas

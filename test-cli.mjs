@@ -51,6 +51,13 @@ try {
     prompt: async () => "",
   });
   assert.equal(retained, selected, "Enter debe conservar el perfil activo.");
+
+  const dataAlias = path.join(temporaryRoot, "data-alias");
+  await fs.symlink(dataRoot, dataAlias, process.platform === "win32" ? "junction" : "dir");
+  await assert.rejects(
+    selectRunWorkspace(dataAlias, { workspaceOverride: dataRoot }),
+    /datos privados|solaparse/i,
+  );
 } finally {
   await fs.rm(temporaryRoot, { recursive: true, force: true });
 }
