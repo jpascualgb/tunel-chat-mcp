@@ -31,9 +31,13 @@ No existe ninguna herramienta para ejecutar comandos, PowerShell o programas.
 - Cada perfil tiene permisos, aprobaciones y copias independientes, ligados a la
   huella de su carpeta real.
 - Las aprobaciones son de un solo uso y se consumen de forma atómica.
-- Se bloquean escapes con `..`, rutas absolutas, enlaces simbólicos, uniones,
+- Se bloquean escapes con `..`, rutas absolutas, enlaces simbólicos, enlaces duros, uniones,
   flujos ADS, nombres reservados de Windows, secretos habituales y los datos del
   propio túnel.
+- Los archivos con más de un enlace duro se rechazan aunque todos sus nombres
+  parezcan estar dentro de la carpeta autorizada: no es posible demostrarlo con
+  `realpath`. Los enlaces temporales usados internamente para crear archivos
+  atómicamente se eliminan antes de finalizar la operación.
 - Las copias llevan perfil, huella de carpeta y SHA-256. Los metadatos se validan
   antes de listar, limpiar o restaurar.
 - La credencial del plano de control se protege con DPAPI, Keychain o Secret
@@ -168,6 +172,14 @@ Para retirar el arranque y la credencial nativa sin borrar registros ni copias:
 ```text
 node cli.mjs uninstall --yes
 ```
+
+En macOS/Linux, la desinstalación comprueba que el servicio esté detenido y que
+la credencial haya desaparecido. Si el gestor de servicios falla, conserva la
+definición hasta poder confirmar la parada. Si el almacén está bloqueado o no
+responde, informa del error y no anuncia éxito. Desbloquea el almacén y repite
+la operación; en macOS hace falta una sesión gráfica disponible. La operación
+es idempotente cuando se puede confirmar que servicio y credencial ya no existen.
+Las instancias iniciadas manualmente se detienen desde su panel o terminal.
 
 ## Panel de control
 

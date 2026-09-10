@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { appendActivity, normalizePathForIdentity, readApprovals, readProfiles, readSettings, verifyAuditChain } from "./secure-store.mjs";
-import { atomicWriteBuffer, readBoundedPreview, resolveNewWorkspaceFile } from "./safe-files.mjs";
+import { atomicWriteBuffer, readBoundedPreview, resolveExistingWorkspaceFile, resolveNewWorkspaceFile } from "./safe-files.mjs";
 
 const temporaryBase = await fs.mkdtemp(path.join(os.tmpdir(), "secure-mcp-regressions-"));
 
@@ -56,6 +56,23 @@ try {
     "Una escritura atomica debe rechazar un destino distinto del esperado.",
   );
   assert.equal(await fs.readFile(atomicTarget, "utf8"), "estado actual");
+
+  const atomicCreatedTarget = await resolveNewWorkspaceFile(workspace, "atomic-created.txt");
+  await atomicWriteBuffer(atomicCreatedTarget, Buffer.from("creacion atomica normal"), { createOnly: true });
+  const resolvedAtomicFile = await resolveExistingWorkspaceFile(workspace, "atomic-created.txt");
+  assert.equal(resolvedAtomicFile.stats.nlink, 1, "La creacion atomica no debe dejar enlaces temporales pendientes.");
+  assert.equal(await fs.readFile(resolvedAtomicFile.realPath, "utf8"), "creacion atomica normal");
+
+  const externalFile = path.join(outside, "external.txt");
+  const hardlinkFile = path.join(workspace, "external-link.txt");
+  await fs.writeFile(externalFile, "contenido fuera del espacio autorizado", "utf8");
+  await fs.link(externalFile, hardlinkFile);
+  await assert.rejects(
+    resolveExistingWorkspaceFile(workspace, "external-link.txt"),
+    /enlace|link/i,
+    "Un enlace duro dentro del espacio no debe autorizar un archivo con otra ruta exterior.",
+  );
+  assert.equal(await fs.readFile(externalFile, "utf8"), "contenido fuera del espacio autorizado");
 
   const auditPath = path.join(temporaryBase, "activity.jsonl");
   await appendActivity(auditPath, { action: "first" }, { maxBytes: 1, retainedFiles: 3 });

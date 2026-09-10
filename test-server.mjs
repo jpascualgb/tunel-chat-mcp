@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -125,6 +126,28 @@ try {
     read: true, create: true, modify: true, delete: true,
     approvalRequired: false, sensitiveProtection: true, backupEnabled: true, backupRetentionDays: 15,
   }));
+
+  const externalContent = "contenido externo que MCP no debe leer ni cambiar";
+  const externalFile = path.join(temporaryBase, "external.txt");
+  const externalHash = createHash("sha256").update(externalContent).digest("hex");
+  await fs.writeFile(externalFile, externalContent, "utf8");
+  const hardlinkResults = [];
+  for (const [name, toolArguments] of [
+    ["leer_archivo", {}],
+    ["modificar_archivo", { contenido: "cambio no autorizado", modo: "sobrescribir", sha256_esperado: externalHash, confirmar: true }],
+    ["eliminar_archivo", { sha256_esperado: externalHash, confirmar: true }],
+  ]) {
+    const relativePath = `${name}-external-link.txt`;
+    await fs.link(externalFile, path.join(temporaryRoot, relativePath));
+    const result = await client.callTool({ name, arguments: { ruta: relativePath, ...toolArguments } });
+    hardlinkResults.push({ tool: name, rejected: result.isError === true });
+    assert.equal(await fs.readFile(externalFile, "utf8"), externalContent, `${name} altero contenido fuera del espacio autorizado.`);
+  }
+  assert.deepEqual(hardlinkResults, [
+    { tool: "leer_archivo", rejected: true },
+    { tool: "modificar_archivo", rejected: true },
+    { tool: "eliminar_archivo", rejected: true },
+  ], "MCP debe rechazar lectura, modificacion y eliminacion mediante enlaces duros a archivos externos.");
 
   const unconfirmedAutonomousWrite = await client.callTool({
     name: "modificar_archivo",

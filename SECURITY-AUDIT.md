@@ -1,5 +1,9 @@
 # Auditoría de seguridad y calidad — 9 de septiembre de 2026
 
+> Actualización del 10 de septiembre: véase la
+> [revisión de las tres correcciones posteriores](docs/audits/2026-09-10-fixes.md).
+> El informe siguiente conserva el estado histórico del 9 de septiembre.
+
 ## Dictamen
 
 La nueva revisión no deja vulnerabilidades críticas ni de prioridad alta conocidas

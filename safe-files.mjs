@@ -7,6 +7,12 @@ import { validateSafeRelativePath } from "./secure-store.mjs";
 export const previewReadBytes = 16 * 1024;
 export const previewTextCharacters = 4000;
 
+export function assertSingleLinkFile(stats) {
+  if (!stats.isFile()) throw new Error("La ruta indicada no es un archivo normal.");
+  // realpath cannot detect another name for the same inode outside the workspace.
+  if (stats.nlink !== 1) throw new Error("No se permite acceder a archivos con enlaces duros.");
+}
+
 export async function sha256File(filePath) {
   const hash = createHash("sha256");
   for await (const chunk of createReadStream(filePath)) hash.update(chunk);
@@ -42,7 +48,7 @@ export async function readBoundedPreview(filePath) {
   const handle = await fs.open(filePath, "r");
   try {
     const stats = await handle.stat();
-    if (!stats.isFile()) throw new Error("La vista previa solo admite archivos normales.");
+    assertSingleLinkFile(stats);
     const buffer = Buffer.alloc(Math.min(previewReadBytes, stats.size));
     const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
     return bufferPreview(buffer.subarray(0, bytesRead), stats.size);
@@ -79,7 +85,7 @@ export async function resolveExistingWorkspaceFile(workspaceRoot, requestedPath)
   const candidate = workspaceCandidate(root, requestedPath);
   await assertNoLinkComponents(root, candidate, true);
   const stats = await fs.lstat(candidate);
-  if (!stats.isFile()) throw new Error("La ruta indicada no es un archivo normal.");
+  assertSingleLinkFile(stats);
   const realPath = await fs.realpath(candidate);
   if (!isInside(root, realPath)) throw new Error("La ruta resuelta queda fuera de la carpeta autorizada.");
   return { realPath, stats, relativePath: path.relative(root, realPath).split(path.sep).join("/") };
@@ -118,9 +124,7 @@ export async function atomicRestoreFromFile(sourcePath, destinationPath, options
       return;
     }
     const destinationStats = await fs.lstat(destinationPath);
-    if (!destinationStats.isFile() || destinationStats.isSymbolicLink()) {
-      throw new Error("El destino de restauracion no es un archivo normal.");
-    }
+    assertSingleLinkFile(destinationStats);
     if (await sha256File(destinationPath) !== expectedDestinationHash) {
       const error = new Error("El archivo de destino cambio antes de la restauracion.");
       error.code = "STATE_CONFLICT";
@@ -152,7 +156,7 @@ export async function atomicWriteBuffer(destinationPath, buffer, options = {}) {
   try {
     await fs.writeFile(temporaryPath, buffer, { flag: "wx" });
     const destinationStats = await fs.lstat(destinationPath);
-    if (!destinationStats.isFile() || destinationStats.isSymbolicLink()) throw new Error("El destino no es un archivo normal.");
+    assertSingleLinkFile(destinationStats);
     if (await sha256File(destinationPath) !== expectedDestinationHash) {
       const error = new Error("El archivo cambio antes de la escritura.");
       error.code = "STATE_CONFLICT";
@@ -167,7 +171,7 @@ export async function atomicWriteBuffer(destinationPath, buffer, options = {}) {
 
 export async function atomicMoveToNewPath(sourcePath, destinationPath, expectedHash = null) {
   const sourceStats = await fs.lstat(sourcePath);
-  if (!sourceStats.isFile() || sourceStats.isSymbolicLink()) throw new Error("El origen recuperable no es un archivo normal.");
+  assertSingleLinkFile(sourceStats);
   if (expectedHash && await sha256File(sourcePath) !== expectedHash) throw new Error("El origen recuperable no supera la verificacion de integridad.");
   await fs.link(sourcePath, destinationPath);
   try {

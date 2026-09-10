@@ -19,7 +19,7 @@ import {
   validateSafeRelativePath,
   workspaceFingerprint,
 } from "./secure-store.mjs";
-import { atomicRestoreFromFile, atomicWriteBuffer, atomicWriteJsonFile, bufferPreview, readBoundedPreview, sha256File } from "./safe-files.mjs";
+import { assertSingleLinkFile, atomicRestoreFromFile, atomicWriteBuffer, atomicWriteJsonFile, bufferPreview, readBoundedPreview, sha256File } from "./safe-files.mjs";
 
 const projectRoot = path.dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = process.env.MCP_WORKSPACE_ROOT?.trim() || null;
@@ -115,7 +115,7 @@ async function resolveAuthorizedPath(requestedPath, expectedType, settings) {
   const realCandidate = await fs.realpath(candidate);
   if (!isInsideWorkspace(realCandidate)) throw new Error("La ruta resuelta queda fuera de la carpeta autorizada.");
   if (expectedType === "directory" && !stats.isDirectory()) throw new Error("La ruta indicada no es una carpeta.");
-  if (expectedType === "file" && !stats.isFile()) throw new Error("La ruta indicada no es un archivo normal.");
+  if (expectedType === "file") assertSingleLinkFile(stats);
   return { realPath: realCandidate, stats };
 }
 
@@ -293,6 +293,7 @@ server.registerTool("leer_archivo", {
     const length = Math.min(max_bytes, stats.size - offset_bytes);
     const buffer = Buffer.alloc(length);
     handle = await fs.open(realPath, "r");
+    assertSingleLinkFile(await handle.stat());
     const { bytesRead } = await handle.read(buffer, 0, length, offset_bytes);
     const chunk = buffer.subarray(0, bytesRead);
     let outputFormat = formato;

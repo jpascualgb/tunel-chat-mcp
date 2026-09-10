@@ -109,7 +109,8 @@ function runCommand(command, args, { input, env = buildSanitizedEnvironment(proc
     child.stdout.on("data", (chunk) => { stdout += chunk; });
     child.stderr.on("data", (chunk) => { stderr += chunk; });
     child.once("error", reject);
-    child.once("exit", (code) => {
+    // Wait for stdout/stderr to finish before interpreting absence or errors.
+    child.once("close", (code) => {
       if (code === 0 || allowFailure) return resolve({ code, stdout, stderr });
       let detail = stderr.trim() || stdout.trim() || `codigo ${code}`;
       for (const value of sensitiveValues) if (value) detail = detail.replaceAll(value, "[REDACTED]");
@@ -170,6 +171,13 @@ export async function loadControlPlaneKey(options = {}) {
   return validateControlPlaneKey(result.stdout);
 }
 
+function keychainItemAbsent(result) {
+  // security can return errSecItemNotFound after an earlier search error too.
+  // Accept only the isolated, known diagnostic; otherwise fail closed.
+  return result.code === 44 && !result.stdout.trim()
+    && result.stderr.trim() === "security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain.";
+}
+
 export async function deleteControlPlaneKey(options = {}) {
   const platform = options.platform || process.platform;
   platformCapabilities(platform);
@@ -180,10 +188,74 @@ export async function deleteControlPlaneKey(options = {}) {
     return;
   }
   if (platform === "darwin") {
-    await runCommand("/usr/bin/security", ["delete-generic-password", "-a", credentialAccount(), "-s", serviceId], { allowFailure: true });
+    const attributes = ["-a", credentialAccount(), "-s", serviceId];
+    const commandOptions = { allowFailure: true, env: { ...buildSanitizedEnvironment(process.env), LC_ALL: "C", LANG: "C" } };
+    const deletion = await runCommand("/usr/bin/security", ["delete-generic-password", ...attributes], commandOptions);
+    // errSecItemNotFound (-25300) is exit status 44 in the security CLI.
+    if (deletion.code !== 0 && !keychainItemAbsent(deletion)) throw new Error("Fallo al eliminar la credencial de Keychain.");
+    const remaining = await runCommand("/usr/bin/security", ["find-generic-password", ...attributes], commandOptions);
+    if (!keychainItemAbsent(remaining)) throw new Error("No se pudo confirmar la eliminacion de la credencial de Keychain.");
     return;
   }
-  await runCommand("secret-tool", ["clear", "application", serviceId, "credential", "control-plane"], { allowFailure: true });
+  const attributes = ["application", serviceId, "credential", "control-plane"];
+  const deletion = await runCommand("secret-tool", ["clear", ...attributes], { allowFailure: true });
+  const noUnlockedMatch = deletion.code === 1 && !deletion.stdout.trim() && !deletion.stderr.trim();
+  if (deletion.code !== 0 && !noUnlockedMatch) throw new Error("Fallo al eliminar la credencial de Secret Service.");
+  // clear only removes unlocked items. search --all also returns locked items;
+  // never include its output in errors because it can contain remaining secrets.
+  const remaining = await runCommand("secret-tool", ["search", "--all", ...attributes], { allowFailure: true });
+  if (remaining.code !== 0 || remaining.stdout.trim() || remaining.stderr.trim()) {
+    throw new Error("No se pudo confirmar la eliminacion de la credencial de Secret Service. Comprueba el almacen desbloqueado.");
+  }
+}
+
+async function launchAgentLoaded() {
+  const target = `gui/${process.getuid()}/${serviceId}`;
+  const result = await runCommand("launchctl", ["print", target], {
+    allowFailure: true,
+    env: { ...buildSanitizedEnvironment(process.env), LC_ALL: "C", LANG: "C" },
+  });
+  if (result.code === 0) return true;
+  // Other failures (including a missing GUI domain) must not mean "stopped".
+  if (result.code === 113 && result.stderr.includes(`Could not find service "${serviceId}" in domain`)) return false;
+  throw new Error("No se pudo consultar el servicio de launchd; no se confirma su desactivacion.");
+}
+
+async function systemdServiceState() {
+  const result = await runCommand("systemctl", ["--user", "show", `${serviceId}.service`,
+    "--property=LoadState", "--property=ActiveState", "--property=UnitFileState"]);
+  const properties = Object.fromEntries(result.stdout.trim().split(/\r?\n/).map((line) => {
+    const separator = line.indexOf("=");
+    return [line.slice(0, separator), line.slice(separator + 1)];
+  }));
+  if (!["loaded", "not-found"].includes(properties.LoadState) || !properties.ActiveState) {
+    throw new Error("No se pudo verificar el estado del servicio de systemd.");
+  }
+  return properties;
+}
+
+function systemdServiceDisabled(state) {
+  return state.ActiveState === "inactive" && (state.UnitFileState === "disabled"
+    || (state.LoadState === "not-found" && !state.UnitFileState));
+}
+
+async function disableNativeAutostart(platform, definition) {
+  if (platform === "darwin") {
+    if (await launchAgentLoaded()) {
+      await runCommand("launchctl", ["bootout", `gui/${process.getuid()}/${serviceId}`]);
+    }
+    if (await launchAgentLoaded()) throw new Error("El servicio de launchd sigue cargado; no se ha desactivado.");
+    await fs.rm(definition, { force: true });
+    return;
+  }
+  if (!systemdServiceDisabled(await systemdServiceState())) {
+    await runCommand("systemctl", ["--user", "disable", "--now", `${serviceId}.service`]);
+  }
+  if (!systemdServiceDisabled(await systemdServiceState())) throw new Error("El servicio de systemd sigue activo o habilitado.");
+  // Preserve the definition until the manager confirms it is stopped/disabled.
+  await fs.rm(definition, { force: true });
+  await runCommand("systemctl", ["--user", "daemon-reload"]);
+  if (!systemdServiceDisabled(await systemdServiceState())) throw new Error("No se pudo confirmar la desactivacion final del servicio de systemd.");
 }
 
 export function autostartPaths(platform = process.platform, home = os.homedir()) {
@@ -224,10 +296,7 @@ export async function setAutostart(value, options = {}) {
 
   const { definition } = autostartPaths(platform, options.home);
   if (!value) {
-    if (platform === "darwin") await runCommand("launchctl", ["bootout", `gui/${process.getuid()}`, definition], { allowFailure: true });
-    else await runCommand("systemctl", ["--user", "disable", "--now", `${serviceId}.service`], { allowFailure: true });
-    await fs.rm(definition, { force: true });
-    if (platform === "linux") await runCommand("systemctl", ["--user", "daemon-reload"], { allowFailure: true });
+    await disableNativeAutostart(platform, definition);
     return;
   }
 
