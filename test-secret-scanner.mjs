@@ -17,6 +17,34 @@ try {
   assert.ok([...findings].some((finding) => finding.includes(".env.large")), "Un archivo sensible grande no fue detectado.");
   assert.ok([...findings].some((finding) => finding.includes("package-lock.json")), "El archivo de bloqueo no fue inspeccionado.");
 
+  const racedPath = path.join(temporaryRoot, "race.txt");
+  await fs.writeFile(racedPath, Buffer.alloc(3 * 1024 * 1024, 0x61));
+  const originalStat = fs.stat;
+  const originalOpen = fs.open;
+  let replaced = false;
+  async function replaceWithSecret() {
+    if (replaced) return;
+    replaced = true;
+    await fs.writeFile(racedPath, `valor=${"sk-" + "r".repeat(32)}`, "utf8");
+  }
+  fs.stat = async (filePath, ...args) => {
+    const stats = await originalStat(filePath, ...args);
+    if (path.resolve(String(filePath)) === path.resolve(racedPath)) await replaceWithSecret();
+    return stats;
+  };
+  fs.open = async (filePath, ...args) => {
+    if (path.resolve(String(filePath)) === path.resolve(racedPath)) await replaceWithSecret();
+    return originalOpen(filePath, ...args);
+  };
+  let racedFindings;
+  try {
+    racedFindings = await scanWorkingTree(temporaryRoot);
+  } finally {
+    fs.stat = originalStat;
+    fs.open = originalOpen;
+  }
+  assert.ok([...racedFindings].some((finding) => finding.includes("race.txt")), "Un cambio entre la comprobacion y la lectura oculto un secreto.");
+
   const historyRoot = path.join(temporaryRoot, "history");
   await fs.mkdir(historyRoot);
   await fs.writeFile(path.join(historyRoot, "a.txt"), "contenido duplicado", "utf8");

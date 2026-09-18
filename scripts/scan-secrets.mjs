@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { promises as fs } from "node:fs";
+import { constants as fsConstants, promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -33,6 +33,29 @@ function inspectContent(findings, relativePath, content, source) {
   }
 }
 
+async function readBoundedRegularFile(filePath) {
+  const noFollow = process.platform === "win32" ? 0 : fsConstants.O_NOFOLLOW;
+  const handle = await fs.open(filePath, fsConstants.O_RDONLY | noFollow);
+  try {
+    const before = await handle.stat({ bigint: true });
+    if (!before.isFile() || before.size > BigInt(maximumContentBytes)) return null;
+    const buffer = Buffer.alloc(Number(before.size) + 1);
+    let offset = 0;
+    while (offset < buffer.length) {
+      const { bytesRead } = await handle.read(buffer, offset, buffer.length - offset, null);
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
+    const after = await handle.stat({ bigint: true });
+    if (before.size !== after.size || before.mtimeNs !== after.mtimeNs || offset !== Number(after.size)) {
+      throw new Error("El archivo cambio durante el escaneo.");
+    }
+    return buffer.subarray(0, offset).toString("utf8");
+  } finally {
+    await handle.close();
+  }
+}
+
 export async function scanWorkingTree(projectRoot = defaultProjectRoot) {
   const findings = new Set();
   async function visit(directory) {
@@ -46,9 +69,11 @@ export async function scanWorkingTree(projectRoot = defaultProjectRoot) {
       if (!entry.isFile()) continue;
       const relativePath = path.relative(projectRoot, entryPath);
       if (!inspectPath(findings, relativePath, "estado actual")) continue;
-      const stats = await fs.stat(entryPath);
-      if (stats.size <= maximumContentBytes) {
-        inspectContent(findings, relativePath, await fs.readFile(entryPath, "utf8"), "estado actual");
+      try {
+        const content = await readBoundedRegularFile(entryPath);
+        if (content !== null) inspectContent(findings, relativePath, content, "estado actual");
+      } catch {
+        findings.add(`estado actual: no se pudo inspeccionar ${normalizedPath(relativePath)}`);
       }
     }
   }
