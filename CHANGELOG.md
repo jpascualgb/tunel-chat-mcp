@@ -2,6 +2,16 @@
 
 Este proyecto sigue [Versionado Semántico](https://semver.org/lang/es/).
 
+## [3.1.1] - 2026-09-18
+
+### Seguridad
+
+- El escáner de secretos abre, comprueba y lee cada archivo mediante el mismo
+  descriptor, evitando una condición de carrera entre la inspección y la lectura.
+- El escaneo falla de forma segura si un archivo cambia mientras se inspecciona o
+  no puede abrirse con las garantías requeridas.
+- Se añadió una prueba de regresión determinista para este escenario.
+
 ## [3.1.0] - 2026-09-18
 
 Primera versión pública de Túnel Chat MCP.
