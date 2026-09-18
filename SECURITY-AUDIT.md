@@ -90,7 +90,7 @@ macOS/Linux y la procedencia/licencia del binario privado `tunnel-client`.
   actual ni en objetos alcanzables del historial Git.
 - `git diff --check` no detectó errores de espacios o parches mal formados.
 - La ejecución de GitHub Actions
-  [34390800878](https://github.com/jpascualgb/secure-mcp-local-guard/actions/runs/34390800878)
+  [34390800878](https://github.com/jpascualgb/tunel-chat-mcp/actions/runs/34390800878)
   terminó correctamente en Windows, macOS y Ubuntu con el commit `fb6fc5f`.
 
 ## Riesgos residuales

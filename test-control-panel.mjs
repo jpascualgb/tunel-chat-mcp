@@ -6,6 +6,10 @@ import { createHash } from "node:crypto";
 import { createControlPanel, loopbackOrigin, spawnTunnelProcess } from "./control-panel.mjs";
 import { profileDataPaths, workspaceFingerprint } from "./secure-store.mjs";
 
+const panelHtml = await fs.readFile(new URL("./panel/index.html", import.meta.url), "utf8");
+assert.match(panelHtml, /<title>Túnel Chat MCP<\/title>/);
+assert.match(panelHtml, /<h1>Túnel Chat MCP<\/h1>/);
+
 const temporaryBase = await fs.mkdtemp(path.join(os.tmpdir(), "pc-personal-panel-test-"));
 const temporaryRoot = path.join(temporaryBase, "workspace");
 const physicalDataRoot = path.join(temporaryBase, "data-real");

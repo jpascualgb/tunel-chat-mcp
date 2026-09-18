@@ -20,6 +20,11 @@ assert.ok(description.dataRoot);
 assert.ok(description.credentialStore);
 assert.ok(description.serviceManager);
 
+const helpResult = spawnSync(process.execPath, [cliPath, "--help"], { encoding: "utf8" });
+assert.equal(helpResult.status, 0, helpResult.stderr);
+assert.match(helpResult.stdout, /Túnel Chat MCP/);
+assert.match(helpResult.stdout, /tunel-chat-mcp platform/);
+
 const badCommand = spawnSync(process.execPath, [cliPath, "definitely-unknown"], { encoding: "utf8" });
 assert.notEqual(badCommand.status, 0);
 assert.match(badCommand.stderr, /comando desconocido/i);

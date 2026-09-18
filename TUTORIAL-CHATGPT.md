@@ -1,4 +1,4 @@
-# Conectar Secure MCP Local Guard con ChatGPT.com
+# Conectar Túnel Chat MCP con ChatGPT.com
 
 Este tutorial explica cómo conectar en ChatGPT el túnel que ya has configurado en
 tu PC. El servidor permanece en tu equipo y `tunnel-client` establece una conexión
@@ -73,7 +73,7 @@ problemas](#solución-de-problemas).
 
 En el formulario de creación:
 
-1. Escribe un nombre reconocible, por ejemplo **Secure MCP Local Guard**.
+1. Escribe un nombre reconocible, por ejemplo **Túnel Chat MCP**.
 2. En **Connection** o **Conexión**, selecciona **Tunnel**.
 3. Elige tu túnel en la lista.
 4. Si no aparece pero conoces su identificador, pega el valor `tunnel_...` en el
@@ -96,7 +96,7 @@ Antes de activar escritura o eliminación:
 4. Envía este mensaje:
 
 ```text
-Usa Secure MCP Local Guard y ejecuta comprobar_estado_local. Dime solamente
+Usa Túnel Chat MCP y ejecuta comprobar_estado_local. Dime solamente
 la carpeta autorizada, los permisos efectivos y las protecciones activas.
 No modifiques ningún archivo.
 ```
@@ -105,7 +105,7 @@ La respuesta debería mostrar el nombre del servidor, la carpeta autorizada y
 permisos de solo lectura. Después puedes probar:
 
 ```text
-Usa Secure MCP Local Guard para listar los archivos y carpetas de la raíz
+Usa Túnel Chat MCP para listar los archivos y carpetas de la raíz
 autorizada. No modifiques nada.
 ```
 
@@ -118,7 +118,7 @@ Haz esta prueba únicamente dentro de una carpeta preparada para ello:
 3. Pide a ChatGPT:
 
 ```text
-Usa Secure MCP Local Guard para crear prueba-chatgpt.txt con el texto
+Usa Túnel Chat MCP para crear prueba-chatgpt.txt con el texto
 "Conexión MCP verificada". Si necesita aprobación local, espera a que yo la
 apruebe y después repite la operación con la aprobación correspondiente.
 ```

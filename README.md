@@ -1,4 +1,4 @@
-# Secure MCP Local Guard
+# Túnel Chat MCP
 
 Servidor MCP local para trabajar con archivos privados desde ChatGPT mediante
 [OpenAI Secure MCP Tunnel](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels),
@@ -138,7 +138,7 @@ escribe otra. Mantén abierta la ventana: `Ctrl+C` apaga el controlador y el tú
 
 ## Conectar desde ChatGPT.com
 
-Consulta el tutorial [Conectar Secure MCP Local Guard con
+Consulta el tutorial [Conectar Túnel Chat MCP con
 ChatGPT.com](TUTORIAL-CHATGPT.md). Explica paso a paso cómo crear la app en modo
 desarrollador, seleccionar el túnel, probar primero el acceso de solo lectura,
 aprobar una modificación y solucionar problemas de conexión.
@@ -228,7 +228,7 @@ de aprobaciones.
 ## Publicación
 
 El repositorio es público en
-[github.com/jpascualgb/secure-mcp-local-guard](https://github.com/jpascualgb/secure-mcp-local-guard).
+[github.com/jpascualgb/tunel-chat-mcp](https://github.com/jpascualgb/tunel-chat-mcp).
 Antes de instalarlo, redistribuirlo o publicar una modificación:
 
 1. Confirmar las condiciones de redistribución de `tunnel-client`; `vendor/` está

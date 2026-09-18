@@ -37,16 +37,16 @@ function parseArguments(argv) {
 }
 
 function help() {
-  return `Secure MCP Tunnel
+  return `Túnel Chat MCP
 
 Uso:
-  secure-mcp-tunnel platform [--json]
-  secure-mcp-tunnel credential set [--data-root RUTA]
-  secure-mcp-tunnel setup --workspace RUTA --tunnel-id tunnel_ID [--client RUTA]
-  secure-mcp-tunnel run [--workspace RUTA] [--non-interactive] [--data-root RUTA] [--client RUTA]
-  secure-mcp-tunnel tunnel start|stop|restart|status [--data-root RUTA]
-  secure-mcp-tunnel autostart enable|disable|status [--data-root RUTA]
-  secure-mcp-tunnel uninstall --yes [--data-root RUTA]
+  tunel-chat-mcp platform [--json]
+  tunel-chat-mcp credential set [--data-root RUTA]
+  tunel-chat-mcp setup --workspace RUTA --tunnel-id tunnel_ID [--client RUTA]
+  tunel-chat-mcp run [--workspace RUTA] [--non-interactive] [--data-root RUTA] [--client RUTA]
+  tunel-chat-mcp tunnel start|stop|restart|status [--data-root RUTA]
+  tunel-chat-mcp autostart enable|disable|status [--data-root RUTA]
+  tunel-chat-mcp uninstall --yes [--data-root RUTA]
 
 La clave se solicita de forma oculta o se lee de la entrada estandar; nunca se acepta como argumento.
 `;

@@ -79,7 +79,7 @@ export function buildSystemdUserUnit({ nodePath, cliPath, dataRoot, clientPath }
   validateServiceValues([nodePath, cliPath, dataRoot, ...(clientPath ? [clientPath] : [])]);
   const clientArgument = clientPath ? ` --client ${systemdQuote(clientPath)}` : "";
   return `[Unit]
-Description=OpenAI Secure MCP Tunnel
+Description=Tunel Chat MCP
 After=network-online.target
 
 [Service]

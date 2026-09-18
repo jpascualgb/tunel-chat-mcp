@@ -51,7 +51,7 @@ Register-ScheduledTask `
     -Trigger $trigger `
     -Principal $principal `
     -Settings $settings `
-    -Description "Inicia el Secure MCP Tunnel PC personal al entrar en Windows." `
+    -Description "Inicia Tunel Chat MCP al entrar en Windows." `
     -Force | Out-Null
 
 Write-Output "Inicio automatico activado para el usuario $userId."
