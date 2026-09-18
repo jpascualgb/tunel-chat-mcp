@@ -227,7 +227,9 @@ de aprobaciones.
 
 ## Publicación
 
-El repositorio se mantiene privado. Antes de hacerlo público:
+El repositorio es público en
+[github.com/jpascualgb/secure-mcp-local-guard](https://github.com/jpascualgb/secure-mcp-local-guard).
+Antes de instalarlo, redistribuirlo o publicar una modificación:
 
 1. Confirmar las condiciones de redistribución de `tunnel-client`; `vendor/` está
    excluido del repositorio.
@@ -237,8 +239,8 @@ El repositorio se mantiene privado. Antes de hacerlo público:
    secretos. La integración continua ya ejecuta pruebas y `npm audit` en cada
    cambio propuesto y semanalmente.
 4. Revisar que no haya rutas, capturas ni identificadores personales.
-5. Activar en GitHub las funciones disponibles de Dependabot, análisis de secretos
-   y protección de la rama principal.
+5. Mantener activadas en GitHub las funciones disponibles de Dependabot, análisis
+   de secretos y protección de la rama principal.
 
 ## Licencia
 
