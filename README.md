@@ -4,6 +4,8 @@ Servidor MCP local para trabajar con archivos privados desde ChatGPT mediante
 [OpenAI Secure MCP Tunnel](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels),
 sin abrir puertos entrantes ni publicar el servidor local en Internet.
 
+Proyecto comunitario independiente; no es un producto oficial de OpenAI.
+
 > Estado: versión local funcional y endurecida en Windows, distribuida bajo
 > Apache-2.0. La implementación de macOS y Linux tiene pruebas automáticas, pero
 > aún requiere validación funcional en equipos reales y se ofrece como
@@ -220,6 +222,9 @@ de aprobaciones.
 - `enable-autostart.ps1` y `disable-autostart.ps1`: inicio con Windows.
 - `SECURITY.md`: política de seguridad y divulgación responsable.
 - `SECURITY-AUDIT.md`: última auditoría y riesgos residuales conocidos.
+- `CHANGELOG.md`: cambios y alcance de cada versión pública.
+- `CONTRIBUTING.md`: proceso seguro para incidencias y contribuciones.
+- `CODE_OF_CONDUCT.md`: normas de participación y canal privado de aplicación.
 - `TUTORIAL-CHATGPT.md`: conexión, prueba y desconexión desde ChatGPT.com.
 - `docs/control-api-v1.md`: interfaz local versionada.
 - `docs/decisions/`: decisiones de arquitectura y sus límites de seguridad.

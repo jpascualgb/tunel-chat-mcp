@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Reportar una vulnerabilidad de forma privada
+    url: https://github.com/jpascualgb/tunel-chat-mcp/security/advisories/new
+    about: No publiques credenciales, rutas privadas ni pruebas de explotación en una incidencia.

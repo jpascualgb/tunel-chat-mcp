@@ -8,7 +8,9 @@ Security fixes are applied to the latest version on the default branch.
 
 Do not publish credentials, tunnel identifiers, private file paths, proof-of-concept
 payloads containing personal data, or screenshots of private profiles in a public
-issue. Contact the maintainer privately and include:
+issue. Use GitHub's
+[private vulnerability reporting form](https://github.com/jpascualgb/tunel-chat-mcp/security/advisories/new)
+and include:
 
 - the affected version;
 - the security boundary that was crossed;
@@ -16,6 +18,11 @@ issue. Contact the maintainer privately and include:
 - the expected and observed result.
 
 Rotate the OpenAI runtime credential immediately if it may have been disclosed.
+
+The maintainer aims to acknowledge a complete report within 72 hours, assess its
+severity and coordinate a safe disclosure. Do not disclose the issue publicly until
+a correction or mitigation is available. This project does not currently operate a
+paid bug-bounty program.
 
 ## Security boundaries
 

@@ -1,0 +1,49 @@
+name: Validación de macOS
+description: Registra una prueba funcional completa en un Mac real.
+title: "[macOS]: validación en "
+labels:
+  - macos
+  - validation
+body:
+  - type: markdown
+    attributes:
+      value: Usa una carpeta temporal y no publiques claves, identificadores de túnel, rutas personales ni registros sin limpiar.
+  - type: input
+    id: environment
+    attributes:
+      label: Versión de macOS y arquitectura
+      placeholder: "Ejemplo: macOS 15.x, Apple Silicon"
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versiones de Node.js y tunnel-client
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pruebas completadas
+      options:
+        - label: Instalación limpia con `npm ci --ignore-scripts`
+        - label: Credencial guardada y eliminada mediante Keychain
+        - label: Diagnóstico y conexión del túnel
+        - label: Lectura dentro de una carpeta temporal
+        - label: Escritura con aprobación local
+        - label: Reinicio y comprobación de salud
+        - label: Activación y desactivación de `launchd`
+        - label: Desinstalación sin credenciales residuales
+  - type: textarea
+    id: result
+    attributes:
+      label: Resultado y observaciones
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacidad
+      options:
+        - label: He eliminado secretos, identificadores y rutas personales del informe.
+          required: true

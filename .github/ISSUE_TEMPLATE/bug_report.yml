@@ -1,0 +1,71 @@
+name: Informe de error
+description: Comunica un fallo reproducible sin incluir información privada.
+title: "[Error]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        No incluyas claves, identificadores de túnel, rutas personales, capturas de perfiles ni contenido privado. Para una vulnerabilidad usa el reporte privado de la pestaña Security.
+  - type: dropdown
+    id: operating-system
+    attributes:
+      label: Sistema operativo
+      options:
+        - Windows 10/11
+        - macOS
+        - Linux
+        - Otro
+    validations:
+      required: true
+  - type: input
+    id: os-version
+    attributes:
+      label: Versión y arquitectura
+      placeholder: "Ejemplo: Windows 11 24H2, x64"
+    validations:
+      required: true
+  - type: input
+    id: node-version
+    attributes:
+      label: Versión de Node.js
+      placeholder: "node --version"
+    validations:
+      required: true
+  - type: input
+    id: tunnel-client-version
+    attributes:
+      label: Versión de tunnel-client
+      placeholder: "tunnel-client --version"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Descripción
+      description: Explica qué esperabas y qué ocurrió.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Pasos para reproducirlo
+      placeholder: Usa una carpeta temporal y valores ficticios.
+    validations:
+      required: true
+  - type: textarea
+    id: sanitized-output
+    attributes:
+      label: Salida limpiada
+      description: Elimina claves, tunnel_id, rutas personales y nombres de archivos privados.
+      render: shell
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Confirmaciones
+      options:
+        - label: He comprobado que el informe no contiene secretos ni información privada.
+          required: true
+        - label: He buscado incidencias similares antes de abrir esta.
+          required: true

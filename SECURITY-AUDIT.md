@@ -2,7 +2,13 @@
 
 > Actualización del 10 de septiembre: véase la
 > [revisión de las tres correcciones posteriores](docs/audits/2026-09-10-fixes.md).
-> El informe siguiente conserva el estado histórico del 9 de septiembre.
+>
+> Actualización del 18 de septiembre: el repositorio se publica como beta con
+> Windows validado y macOS/Linux en validación comunitaria. `tunnel-client` ya tiene
+> un repositorio oficial público bajo Apache-2.0 y publica evidencias de integridad;
+> continúa excluido de este repositorio y debe descargarse directamente desde
+> OpenAI. El informe siguiente conserva la evidencia técnica iniciada el 9 de
+> septiembre y actualiza sus condiciones de distribución.
 
 ## Dictamen
 
@@ -11,9 +17,10 @@ en el código fuente del repositorio. Los hallazgos altos de la auditoría anter
 los requisitos funcionales descritos en los audios están implementados y cubiertos
 por pruebas de regresión.
 
-El resultado autoriza pruebas privadas y revisión por pares. Antes de una
-publicación general aún deben verificarse en máquinas reales los adaptadores de
-macOS/Linux y la procedencia/licencia del binario privado `tunnel-client`.
+El resultado autoriza una beta pública y revisión por pares. Windows cuenta con
+validación funcional real; macOS y Linux conservan estado experimental hasta que se
+complete un ciclo funcional en equipos reales. Este estado debe comunicarse sin
+prometer soporte de producción multiplataforma.
 
 ## Correcciones verificadas
 
@@ -92,6 +99,12 @@ macOS/Linux y la procedencia/licencia del binario privado `tunnel-client`.
 - La ejecución de GitHub Actions
   [34390800878](https://github.com/jpascualgb/tunel-chat-mcp/actions/runs/34390800878)
   terminó correctamente en Windows, macOS y Ubuntu con el commit `fb6fc5f`.
+- La ejecución
+  [35380656658](https://github.com/jpascualgb/tunel-chat-mcp/actions/runs/35380656658)
+  volvió a terminar correctamente en los tres sistemas el 18 de septiembre de
+  2026. La auditoría local de dependencias de producción indicó 0 vulnerabilidades
+  conocidas; npm verificó firmas de registro para los 94 paquetes instalados y
+  attestations para 9 de ellos.
 
 ## Riesgos residuales
 
@@ -104,8 +117,9 @@ macOS/Linux y la procedencia/licencia del binario privado `tunnel-client`.
    funcional en ambos sistemas antes de prometer soporte de producción.
 
 2. **Binario externo.** `tunnel-client` no forma parte del historial y su código no
-   se ha auditado aquí. Deben comprobarse canal oficial, firma o suma publicada,
-   versión y condiciones de redistribución para cada plataforma.
+   se ha auditado aquí. Debe obtenerse del repositorio o canal oficial de OpenAI y
+   verificarse con las sumas, SBOM y procedencia publicadas para su versión. Túnel
+   Chat MCP no lo reempaqueta ni lo redistribuye.
 
 ### Prioridad baja y límites del modelo
 
@@ -120,13 +134,12 @@ macOS/Linux y la procedencia/licencia del binario privado `tunnel-client`.
 - Calcular SHA-256 completo sigue consumiendo E/S cuando el llamador lo solicita;
   puede omitirse con `incluir_sha256=false` para lecturas exploratorias.
 
-## Condiciones antes de publicar
+## Controles de publicación y mantenimiento
 
-1. Mantener verde la validación de CI en los tres sistemas para cada cambio de
-   publicación.
-2. Ejecutar una prueba manual de almacén, arranque, reinicio y desinstalación en
-   macOS y Linux.
-3. Verificar procedencia, integridad y derechos de distribución de cada binario de
-   `tunnel-client`.
+1. Mantener verde la validación de CI en los tres sistemas para cada versión.
+2. Mantener macOS y Linux como experimentales hasta verificar manualmente almacén,
+   arranque, reinicio y desinstalación en ambos sistemas.
+3. No distribuir binarios de `tunnel-client`; dirigir a las versiones oficiales y
+   recomendar la verificación de sus evidencias de integridad.
 4. Mantener la API exclusivamente en loopback. Cualquier acceso remoto requiere un
    modelo de amenazas, autenticación y auditoría nuevos.
