@@ -6,9 +6,8 @@ sin abrir puertos entrantes ni publicar el servidor local en Internet.
 
 > Estado: versión local funcional y endurecida en Windows, distribuida bajo
 > Apache-2.0. La implementación de macOS y Linux tiene pruebas automáticas, pero
-> aún requiere validación funcional en equipos reales. La
-> instalación privada de `tunnel-client` debe sustituirse por las instrucciones de
-> distribución oficiales que correspondan.
+> aún requiere validación funcional en equipos reales y se ofrece como
+> compatibilidad experimental.
 
 ## Qué permite hacer
 
@@ -225,22 +224,29 @@ de aprobaciones.
 - `docs/control-api-v1.md`: interfaz local versionada.
 - `docs/decisions/`: decisiones de arquitectura y sus límites de seguridad.
 
-## Publicación
+## Estado de compatibilidad
 
-El repositorio es público en
-[github.com/jpascualgb/tunel-chat-mcp](https://github.com/jpascualgb/tunel-chat-mcp).
-Antes de instalarlo, redistribuirlo o publicar una modificación:
+| Entorno | Estado | Validación actual |
+| --- | --- | --- |
+| Windows 10/11 | Validado | Uso funcional real, DPAPI, Programador de tareas y pruebas automáticas. |
+| macOS | Experimental | Pruebas automáticas y de contrato para Keychain y `launchd`; falta validación funcional en equipos reales. |
+| Linux de escritorio | Experimental | Pruebas automáticas y de contrato para Secret Service y `systemd --user`; falta validación funcional en equipos reales. |
 
-1. Confirmar las condiciones de redistribución de `tunnel-client`; `vendor/` está
-   excluido del repositorio.
-2. Completar las validaciones reales y las comprobaciones del binario externo
-   indicadas en [SECURITY-AUDIT.md](SECURITY-AUDIT.md).
-3. Volver a ejecutar las pruebas, la auditoría de dependencias y un escaneo de
-   secretos. La integración continua ya ejecuta pruebas y `npm audit` en cada
-   cambio propuesto y semanalmente.
-4. Revisar que no haya rutas, capturas ni identificadores personales.
-5. Mantener activadas en GitHub las funciones disponibles de Dependabot, análisis
-   de secretos y protección de la rama principal.
+La integración continua ejecuta las pruebas en Windows, macOS y Ubuntu ante cada
+cambio y también realiza comprobaciones de seguridad semanales. Estas pruebas no
+sustituyen un ciclo real con ChatGPT, el almacén de credenciales y el servicio de
+inicio de cada sistema.
+
+`tunnel-client` es una dependencia externa y no se distribuye en este repositorio.
+Debe descargarse desde el enlace indicado por la
+[documentación oficial de OpenAI](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels).
+La carpeta `vendor/` permanece excluida de Git y la licencia Apache-2.0 de este
+proyecto no cubre ese cliente.
+
+Los fallos de macOS o Linux pueden comunicarse mediante
+[GitHub Issues](https://github.com/jpascualgb/tunel-chat-mcp/issues), indicando
+sistema, versión, arquitectura, versión de Node.js y pasos para reproducirlos. No
+incluyas claves, identificadores de túnel, rutas personales ni contenido privado.
 
 ## Licencia
 
