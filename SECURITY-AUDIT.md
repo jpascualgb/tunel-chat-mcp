@@ -7,8 +7,10 @@
 > Windows validado y macOS/Linux en validación comunitaria. `tunnel-client` ya tiene
 > un repositorio oficial público bajo Apache-2.0 y publica evidencias de integridad;
 > continúa excluido de este repositorio y debe descargarse directamente desde
-> OpenAI. El informe siguiente conserva la evidencia técnica iniciada el 9 de
-> septiembre y actualiza sus condiciones de distribución.
+> OpenAI. La versión correctiva `v3.1.1` elimina una condición de carrera del
+> escáner de secretos y añade su prueba de regresión. El informe siguiente conserva
+> la evidencia técnica iniciada el 9 de septiembre y actualiza sus condiciones de
+> distribución.
 
 ## Dictamen
 
@@ -59,7 +61,9 @@ prometer soporte de producción multiplataforma.
 - El escáner revisa nombres sensibles incluso en archivos grandes, incluye los
   bloqueos de dependencias y comprueba cada ruta de cada árbol Git aunque varias
   rutas compartan el mismo contenido. También rechaza binarios o archivos de
-  terceros que hayan sido versionados bajo `vendor/`.
+  terceros que hayan sido versionados bajo `vendor/`. Cada archivo se abre,
+  comprueba y lee mediante el mismo descriptor; un cambio durante el escaneo falla
+  de forma segura.
 - Las solicitudes de aprobación almacenadas se validan antes de mostrarse y sus
   identificadores se escapan en el panel.
 - Los directorios internos se ocultan del listado sin depender de mayúsculas o
@@ -88,10 +92,11 @@ prometer soporte de producción multiplataforma.
 - Instalación reproducible definida por `package-lock.json` y sin scripts de
   instalación de terceros en la integración continua (`npm ci --ignore-scripts`).
 - Dependencias de producción: `npm audit --omit=dev --audit-level=moderate`, 0
-  vulnerabilidades conocidas en la consulta del 9 de septiembre de 2026.
-- Siete grupos de pruebas superados: entorno, plataformas/DPAPI real en Windows,
+  vulnerabilidades conocidas en la consulta del 18 de septiembre de 2026. npm
+  verificó firmas de registro para 94 paquetes y attestations para 9.
+- La suite completa superó las pruebas de entorno, plataformas y almacenes nativos,
   CLI, escáner de secretos, regresiones de seguridad, servidor MCP y panel/API.
-- 19 archivos JavaScript superaron `node --check`.
+- 20 archivos JavaScript superaron la comprobación sintáctica.
 - Todos los scripts PowerShell superaron el analizador sintáctico.
 - El escáner local no encontró credenciales ni archivos sensibles en el estado
   actual ni en objetos alcanzables del historial Git.
@@ -102,9 +107,19 @@ prometer soporte de producción multiplataforma.
 - La ejecución
   [35380656658](https://github.com/jpascualgb/tunel-chat-mcp/actions/runs/35380656658)
   volvió a terminar correctamente en los tres sistemas el 18 de septiembre de
-  2026. La auditoría local de dependencias de producción indicó 0 vulnerabilidades
-  conocidas; npm verificó firmas de registro para los 94 paquetes instalados y
-  attestations para 9 de ellos.
+  2026.
+- La ejecución posterior a la corrección
+  [35384261757](https://github.com/jpascualgb/tunel-chat-mcp/actions/runs/35384261757)
+  terminó correctamente en Windows, macOS y Ubuntu con el commit `ace9b06`.
+- CodeQL con consultas ampliadas terminó correctamente en la ejecución
+  [35384262009](https://github.com/jpascualgb/tunel-chat-mcp/actions/runs/35384262009).
+  La alerta alta de carrera de archivos quedó corregida y la alerta media restante
+  se documentó como falso positivo tras verificar la lista permitida de loopback;
+  no quedan alertas CodeQL abiertas.
+- GitHub mantiene activados informes privados de vulnerabilidades, Dependabot,
+  escaneo de secretos y protección contra inserción de secretos. `main` exige pull
+  request, historial lineal, conversaciones resueltas y CI verde en los tres
+  sistemas; prohíbe force-push y borrado.
 
 ## Riesgos residuales
 
