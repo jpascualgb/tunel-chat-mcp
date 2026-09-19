@@ -41,7 +41,7 @@ try {
   await fs.mkdir(dataRoot);
   await fs.mkdir(firstWorkspace);
   await fs.mkdir(secondWorkspace);
-  await fs.writeFile(path.join(dataRoot, "workspace.json"), JSON.stringify({ workspaceRoot: firstWorkspace }), "utf8");
+  await fs.writeFile(path.join(dataRoot, "workspace.json"), `\uFEFF${JSON.stringify({ workspaceRoot: firstWorkspace })}`, "utf8");
 
   const selected = await selectRunWorkspace(dataRoot, {
     interactive: true,

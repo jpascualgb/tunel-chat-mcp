@@ -2,6 +2,15 @@
 
 Este proyecto sigue [Versionado Semántico](https://semver.org/lang/es/).
 
+## [3.2.1] - 2026-09-19
+
+### Corrección
+
+- El iniciador vuelve a aceptar `workspace.json` heredados que PowerShell guardó
+  con una marca UTF-8 BOM. Estos perfiles ya no se interpretan como configuración
+  dañada y pueden arrancar con la credencial protegida actual.
+- Se añadió una prueba de regresión que reproduce el archivo heredado real.
+
 ## [3.2.0] - 2026-09-19
 
 ### Funcionalidad
