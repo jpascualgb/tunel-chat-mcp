@@ -300,7 +300,7 @@ async function toolError(error, action = "tool_error", relativePath = ".") {
   return { isError: true, content: [{ type: "text", text: JSON.stringify({ error: message }, null, 2) }], structuredContent: { error: message } };
 }
 
-const server = new McpServer({ name: "pc-personal-seguro", version: "3.2.0" }, {
+const server = new McpServer({ name: "pc-personal-seguro", version: "3.2.1" }, {
   instructions: "Servidor local limitado a un perfil autorizado. Respeta permisos temporales, bloquea secretos y enlaces, crea copias y registra operaciones. Si exige aprobacion local, pide que se conceda en el panel y repite con aprobacion_id. Nunca ejecutes comandos.",
 });
 
@@ -312,7 +312,7 @@ server.registerTool("comprobar_estado_local", {
   const backups = await listBackups();
   const approvals = await readApprovals(approvalsPath);
   const payload = {
-    conectado: true, servidor: "pc-personal-seguro", version: "3.2.0", sistema: os.platform(), arquitectura: os.arch(), node: process.version,
+    conectado: true, servidor: "pc-personal-seguro", version: "3.2.1", sistema: os.platform(), arquitectura: os.arch(), node: process.version,
     perfil_id: profileId, espacio_huella: workspaceId,
     credencial_plano_control_presente: Boolean(process.env.CONTROL_PLANE_API_KEY || process.env.OPENAI_API_KEY || process.env.OPENAI_ADMIN_KEY),
     carpeta_trabajo: workspaceRoot, permisos: effectivePermissions(settings), permisos_caducan: settings.permissionExpiresAt,

@@ -16,6 +16,10 @@
 > con operaciones recursivas de carpetas y entradas de imagen de ChatGPT. El nuevo
 > modelo de amenazas y sus límites se documentan en
 > [ADR-003](docs/decisions/0003-folder-trees-and-chatgpt-file-inputs.md).
+>
+> Actualización correctiva `v3.2.1`: el iniciador admite configuraciones antiguas
+> con UTF-8 BOM sin relajar la validación de su contenido. La credencial continúa
+> almacenada mediante DPAPI y nunca se incorpora al archivo JSON.
 
 ## Dictamen
 

@@ -135,7 +135,8 @@ async function askWorkspace(question) {
 
 async function savedWorkspace(dataRoot) {
   try {
-    const value = JSON.parse(await fs.readFile(path.join(dataRoot, "workspace.json"), "utf8"));
+    const text = await fs.readFile(path.join(dataRoot, "workspace.json"), "utf8");
+    const value = JSON.parse(text.replace(/^\uFEFF/, ""));
     if (typeof value?.workspaceRoot !== "string" || !value.workspaceRoot.trim()) throw new Error("invalid workspace");
     return value.workspaceRoot;
   } catch (error) {
