@@ -2,6 +2,30 @@
 
 Este proyecto sigue [Versionado Semántico](https://semver.org/lang/es/).
 
+## [3.2.0] - 2026-09-19
+
+### Funcionalidad
+
+- Nuevas herramientas MCP para crear carpetas, copiar árboles, mover o renombrar
+  elementos y eliminar carpetas de forma recuperable.
+- Nueva entrada de archivo oficial de ChatGPT para guardar imágenes PNG, JPEG y
+  WebP dentro de la carpeta autorizada, siempre como archivos nuevos.
+- Las nuevas acciones respetan los permisos temporales, el modo autónomo, las
+  aprobaciones locales, la protección sensible y el registro de actividad.
+
+### Seguridad
+
+- Los árboles se limitan a 10.000 elementos y 512 MiB, rechazan enlaces simbólicos,
+  uniones, enlaces duros y archivos especiales, y se vinculan a una huella de
+  contenido antes de aprobarlos.
+- Las copias y movimientos verifican la integridad del resultado; la eliminación
+  de carpetas se revierte si falla la verificación o el registro en la papelera.
+- Las descargas de imágenes exigen HTTPS y puerto 443, fijan la dirección pública
+  resuelta y vuelven a validar cada redirección. Se bloquean direcciones privadas,
+  locales, reservadas y mapeadas mediante IPv6, además de limitar tiempo y tamaño.
+- El tipo MIME declarado no basta: la firma del archivo debe corresponder a PNG,
+  JPEG o WebP y la extensión de destino debe coincidir.
+
 ## [3.1.1] - 2026-09-18
 
 ### Seguridad
