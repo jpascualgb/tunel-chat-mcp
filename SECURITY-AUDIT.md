@@ -11,6 +11,11 @@
 > escáner de secretos y añade su prueba de regresión. El informe siguiente conserva
 > la evidencia técnica iniciada el 9 de septiembre y actualiza sus condiciones de
 > distribución.
+>
+> Actualización del 19 de septiembre: la versión `v3.2.0` amplía la superficie MCP
+> con operaciones recursivas de carpetas y entradas de imagen de ChatGPT. El nuevo
+> modelo de amenazas y sus límites se documentan en
+> [ADR-003](docs/decisions/0003-folder-trees-and-chatgpt-file-inputs.md).
 
 ## Dictamen
 
@@ -70,6 +75,18 @@ prometer soporte de producción multiplataforma.
   minúsculas, además de mantenerse inaccesibles por ruta directa.
 - Las URL IPv6 loopback y los caracteres `%` de las unidades `systemd` se generan
   con el escape exigido por cada plataforma.
+- Crear, copiar, mover, renombrar y eliminar carpetas reutiliza permisos y
+  aprobaciones. Cada árbol se limita a 10.000 elementos y 512 MiB, rechaza enlaces
+  y archivos especiales, y queda ligado a una huella de contenido que se verifica
+  antes y después de la operación.
+- La eliminación de carpetas mueve el árbol completo a la papelera protegida y
+  revierte el movimiento si falla la verificación o la publicación atómica de sus
+  metadatos.
+- Las imágenes recibidas mediante `openai/fileParams` se limitan a 20 MiB y a PNG,
+  JPEG o WebP. La descarga bloquea SSRF mediante HTTPS/443, validación de todas las
+  resoluciones y redirecciones, fijación de la dirección validada y rechazo de
+  rangos locales, privados, reservados, IPv4 mapeado y traducción IPv6 conocida.
+- Las URL firmadas de descarga no se incluyen en el registro de actividad.
 
 ## Funcionalidad solicitada en los audios
 
@@ -83,6 +100,9 @@ prometer soporte de producción multiplataforma.
 - Frontend y backend se comunican mediante `/api/v1`; entradas y errores tienen un
   contrato independiente validado con Zod y documentado en
   [docs/control-api-v1.md](docs/control-api-v1.md).
+- El MCP publica herramientas separadas para crear carpetas, copiar, mover o
+  renombrar y eliminar carpetas, además de una entrada de archivo oficial para
+  guardar imágenes de ChatGPT como archivos nuevos.
 - La integración continua valida Node 22 en Windows, macOS y Linux, comprueba
   sintaxis, ejecuta regresiones, revisa dependencias y escanea secretos en el árbol
   y en todo el historial Git.
@@ -92,11 +112,11 @@ prometer soporte de producción multiplataforma.
 - Instalación reproducible definida por `package-lock.json` y sin scripts de
   instalación de terceros en la integración continua (`npm ci --ignore-scripts`).
 - Dependencias de producción: `npm audit --omit=dev --audit-level=moderate`, 0
-  vulnerabilidades conocidas en la consulta del 18 de septiembre de 2026. npm
+  vulnerabilidades conocidas en la consulta del 19 de septiembre de 2026. npm
   verificó firmas de registro para 94 paquetes y attestations para 9.
 - La suite completa superó las pruebas de entorno, plataformas y almacenes nativos,
   CLI, escáner de secretos, regresiones de seguridad, servidor MCP y panel/API.
-- 20 archivos JavaScript superaron la comprobación sintáctica.
+- 24 archivos JavaScript superaron la comprobación sintáctica.
 - Todos los scripts PowerShell superaron el analizador sintáctico.
 - El escáner local no encontró credenciales ni archivos sensibles en el estado
   actual ni en objetos alcanzables del historial Git.
@@ -148,6 +168,9 @@ prometer soporte de producción multiplataforma.
   sistema de archivos que no los admita, la operación falla de forma cerrada.
 - Calcular SHA-256 completo sigue consumiendo E/S cuando el llamador lo solicita;
   puede omitirse con `incluir_sha256=false` para lecturas exploratorias.
+- El contrato de entrada de imágenes y sus defensas de red tienen pruebas locales,
+  pero el traspaso real de una imagen generada desde ChatGPT debe verificarse tras
+  desplegar `v3.2.0` y actualizar la app conectada al túnel.
 
 ## Controles de publicación y mantenimiento
 

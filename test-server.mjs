@@ -52,12 +52,24 @@ try {
     "leer_archivo",
     "modificar_archivo",
     "eliminar_archivo",
+    "crear_carpeta",
+    "copiar_elemento",
+    "mover_elemento",
+    "eliminar_carpeta",
+    "guardar_imagen_chatgpt",
     "listar_copias_seguridad",
   ]) {
     if (!tools.tools.some((tool) => tool.name === expectedTool)) {
       throw new Error(`No se encontro la herramienta esperada: ${expectedTool}.`);
     }
   }
+
+  const imageTool = tools.tools.find((tool) => tool.name === "guardar_imagen_chatgpt");
+  assert.deepEqual(imageTool?._meta?.["openai/fileParams"], ["imagen"], "La herramienta de imagen debe declarar el parametro de archivo de ChatGPT.");
+  const imageSchema = imageTool?.inputSchema?.properties?.imagen;
+  assert.ok(imageSchema?.properties?.download_url && imageSchema?.properties?.file_id, "El archivo de ChatGPT debe declarar URL e identificador.");
+  assert.ok(imageSchema?.properties?.mime_type && imageSchema?.properties?.file_name, "El archivo de ChatGPT debe declarar los metadatos opcionales oficiales.");
+  assert.ok(imageSchema?.required?.includes("download_url") && imageSchema?.required?.includes("file_id"), "URL e identificador deben ser obligatorios.");
 
   const status = parseResult(await client.callTool({ name: "comprobar_estado_local", arguments: {} }));
   if (status.carpeta_trabajo !== temporaryRoot || status.permisos.delete !== true || status.credencial_plano_control_presente !== false) {
@@ -105,6 +117,23 @@ try {
   });
   if (creation.isError) throw new Error("No se pudo crear un archivo binario autorizado.");
 
+  const folderApprovalRequest = await client.callTool({
+    name: "crear_carpeta",
+    arguments: { ruta: "carpeta-aprobada" },
+  });
+  const folderApprovalPayload = parseResult(folderApprovalRequest);
+  if (folderApprovalRequest.isError || !folderApprovalPayload.aprobacion_local_necesaria) {
+    throw new Error("La creacion de carpetas no solicito aprobacion local.");
+  }
+  await decideApproval(approvalsPath, folderApprovalPayload.solicitud_id, "approved");
+  const approvedFolderCreation = await client.callTool({
+    name: "crear_carpeta",
+    arguments: { ruta: "carpeta-aprobada", aprobacion_id: folderApprovalPayload.solicitud_id },
+  });
+  if (approvedFolderCreation.isError || !(await fs.stat(path.join(temporaryRoot, "carpeta-aprobada"))).isDirectory()) {
+    throw new Error("No se pudo crear una carpeta con aprobacion local.");
+  }
+
   const approvalTarget = path.join(temporaryRoot, "approval-target.txt");
   await fs.writeFile(approvalTarget, "estado mostrado", "utf8");
   const shownHash = createHash("sha256").update("estado mostrado").digest("hex");
@@ -126,6 +155,81 @@ try {
     read: true, create: true, modify: true, delete: true,
     approvalRequired: false, sensitiveProtection: true, backupEnabled: true, backupRetentionDays: 15,
   }));
+
+  const unconfirmedFolder = await client.callTool({
+    name: "crear_carpeta",
+    arguments: { ruta: "sin-confirmar" },
+  });
+  if (!unconfirmedFolder.isError) throw new Error("El modo autonomo creo una carpeta sin confirmacion explicita.");
+
+  const folderCreation = await client.callTool({
+    name: "crear_carpeta",
+    arguments: { ruta: "proyecto", confirmar: true },
+  });
+  if (folderCreation.isError || !(await fs.stat(path.join(temporaryRoot, "proyecto"))).isDirectory()) {
+    throw new Error("No se pudo crear una carpeta autorizada.");
+  }
+  await fs.mkdir(path.join(temporaryRoot, "proyecto", "documentos"));
+  await fs.writeFile(path.join(temporaryRoot, "proyecto", "documentos", "nota.txt"), "contenido copiado", "utf8");
+
+  const treeCopy = await client.callTool({
+    name: "copiar_elemento",
+    arguments: { origen: "proyecto", destino: "proyecto-copia", confirmar: true },
+  });
+  if (treeCopy.isError || await fs.readFile(path.join(temporaryRoot, "proyecto-copia", "documentos", "nota.txt"), "utf8") !== "contenido copiado") {
+    throw new Error("No se pudo copiar un arbol de carpetas autorizado.");
+  }
+
+  const descendantCopy = await client.callTool({
+    name: "copiar_elemento",
+    arguments: { origen: "proyecto", destino: "proyecto/subcarpeta/copia", confirmar: true },
+  });
+  if (!descendantCopy.isError) throw new Error("Se permitio copiar una carpeta dentro de si misma.");
+
+  const treeMove = await client.callTool({
+    name: "mover_elemento",
+    arguments: { origen: "proyecto-copia", destino: "proyecto-renombrado", confirmar: true },
+  });
+  if (treeMove.isError || await fs.readFile(path.join(temporaryRoot, "proyecto-renombrado", "documentos", "nota.txt"), "utf8") !== "contenido copiado") {
+    throw new Error("No se pudo mover o renombrar una carpeta autorizada.");
+  }
+  await assert.rejects(fs.stat(path.join(temporaryRoot, "proyecto-copia")), { code: "ENOENT" });
+
+  const externalDirectory = path.join(temporaryBase, "external-directory");
+  await fs.mkdir(externalDirectory);
+  await fs.writeFile(path.join(externalDirectory, "fuera.txt"), "fuera", "utf8");
+  const linkedDirectory = path.join(temporaryRoot, "proyecto", "enlace-externo");
+  try {
+    await fs.symlink(externalDirectory, linkedDirectory, process.platform === "win32" ? "junction" : "dir");
+    const linkedTreeCopy = await client.callTool({
+      name: "copiar_elemento",
+      arguments: { origen: "proyecto", destino: "copia-insegura", confirmar: true },
+    });
+    if (!linkedTreeCopy.isError) throw new Error("Se copio un arbol que contenia un enlace simbolico o union.");
+    await fs.unlink(linkedDirectory);
+  } catch (error) {
+    if (!["EPERM", "EACCES", "ENOTSUP"].includes(error?.code)) throw error;
+  }
+
+  const privateImageAttempt = await client.callTool({
+    name: "guardar_imagen_chatgpt",
+    arguments: {
+      imagen: { download_url: "https://127.0.0.1/imagen.png", file_id: "file_test" },
+      ruta_destino: "imagen-chatgpt.png",
+      confirmar: true,
+    },
+  });
+  if (!privateImageAttempt.isError) throw new Error("La descarga de imagen permitio un destino de red privado.");
+
+  const insecureImageAttempt = await client.callTool({
+    name: "guardar_imagen_chatgpt",
+    arguments: {
+      imagen: { download_url: "http://example.com/imagen.png", file_id: "file_test" },
+      ruta_destino: "imagen-chatgpt.png",
+      confirmar: true,
+    },
+  });
+  if (!insecureImageAttempt.isError) throw new Error("La descarga de imagen permitio una URL sin HTTPS.");
 
   const externalContent = "contenido externo que MCP no debe leer ni cambiar";
   const externalFile = path.join(temporaryBase, "external.txt");
@@ -193,6 +297,11 @@ try {
   const newHash = parseResult(overwrite).sha256_nuevo;
 
   await fs.writeFile(permissionsPath, JSON.stringify({ read: true, create: true, modify: true, delete: false, approvalRequired: false, backupEnabled: true }));
+  const blockedFolderDelete = await client.callTool({
+    name: "eliminar_carpeta",
+    arguments: { ruta: "proyecto-renombrado", confirmar: true },
+  });
+  if (!blockedFolderDelete.isError) throw new Error("La eliminacion de carpetas desactivada no fue bloqueada.");
   const blockedDelete = await client.callTool({
     name: "eliminar_archivo",
     arguments: { ruta: "imagen.bin", sha256_esperado: newHash, confirmar: true },
@@ -200,6 +309,14 @@ try {
   if (!blockedDelete.isError) throw new Error("La eliminacion desactivada no fue bloqueada.");
 
   await fs.writeFile(permissionsPath, JSON.stringify({ read: true, create: true, modify: true, delete: true, approvalRequired: false, backupEnabled: true }));
+  const folderDeletion = await client.callTool({
+    name: "eliminar_carpeta",
+    arguments: { ruta: "proyecto-renombrado", confirmar: true },
+  });
+  if (folderDeletion.isError) throw new Error("La eliminacion recuperable de carpetas no funciono.");
+  await assert.rejects(fs.stat(path.join(temporaryRoot, "proyecto-renombrado")), { code: "ENOENT" });
+  const trashEntries = await fs.readdir(path.join(temporaryRoot, ".mcp-papelera"));
+  if (!trashEntries.some((entry) => entry.endsWith("-proyecto-renombrado"))) throw new Error("La carpeta eliminada no se conservo en la papelera local.");
   const deletion = await client.callTool({
     name: "eliminar_archivo",
     arguments: { ruta: "imagen.bin", sha256_esperado: newHash, confirmar: true },

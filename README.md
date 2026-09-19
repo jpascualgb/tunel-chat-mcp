@@ -16,7 +16,9 @@ Proyecto comunitario independiente; no es un producto oficial de OpenAI.
 - Listar carpetas y archivos.
 - Leer texto o archivos binarios por fragmentos.
 - Crear y sobrescribir archivos con protección frente a cambios concurrentes.
-- Mover archivos a una papelera recuperable.
+- Crear carpetas y copiar, mover, renombrar o eliminar árboles completos.
+- Mover archivos y carpetas eliminados a una papelera recuperable.
+- Guardar en el PC imágenes PNG, JPEG o WebP que ChatGPT entregue a la app.
 - Crear y restaurar copias de seguridad verificadas.
 - Exigir una aprobación local para cada escritura o permitir un modo autónomo.
 - Activar permisos por 10, 30 o 60 minutos, o sin límite temporal.
@@ -39,6 +41,14 @@ No existe ninguna herramienta para ejecutar comandos, PowerShell o programas.
   parezcan estar dentro de la carpeta autorizada: no es posible demostrarlo con
   `realpath`. Los enlaces temporales usados internamente para crear archivos
   atómicamente se eliminan antes de finalizar la operación.
+- Las operaciones recursivas aceptan como máximo 10.000 elementos y 512 MiB,
+  calculan una huella del árbol y vuelven a verificarla antes y después de mover o
+  copiar. Cualquier enlace, unión, archivo especial o cambio concurrente hace que
+  la operación falle de forma cerrada.
+- Las imágenes de ChatGPT se crean como archivos nuevos, con un máximo de 20 MiB.
+  Solo se descargan por HTTPS, se comprueba su firma real y se bloquean puertos no
+  estándar, credenciales en URL, redirecciones excesivas y direcciones locales,
+  privadas o reservadas para evitar SSRF.
 - Las copias llevan perfil, huella de carpeta y SHA-256. Los metadatos se validan
   antes de listar, limpiar o restaurar.
 - La credencial del plano de control se protege con DPAPI, Keychain o Secret
@@ -203,8 +213,8 @@ npm test
 ```
 
 Las pruebas usan carpetas temporales y cubren permisos, lectura binaria, escapes de
-ruta, ADS, secretos, copias, papelera, aislamiento de perfiles y consumo simultáneo
-de aprobaciones.
+ruta, ADS, secretos, copias, papelera, árboles de carpetas, entradas de archivo de
+ChatGPT, bloqueo SSRF, aislamiento de perfiles y consumo simultáneo de aprobaciones.
 
 ## Archivos principales
 
@@ -214,6 +224,8 @@ de aprobaciones.
 - `control-panel.mjs`: backend y ciclo de vida local.
 - `panel/`: interfaz adaptable ES/EN.
 - `server.mjs`: herramientas MCP y límites del espacio autorizado.
+- `workspace-tree.mjs`: huellas, límites y operaciones seguras con árboles.
+- `chatgpt-files.mjs`: descarga limitada y validación de imágenes de ChatGPT.
 - `mcp-launcher.mjs`: saneamiento del entorno antes de cargar el MCP.
 - `secure-store.mjs`: estado por perfil, bloqueo atómico y auditoría.
 - `harden-private-data.ps1`: restringe los ACL de los datos privados.

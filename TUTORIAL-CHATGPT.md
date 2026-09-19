@@ -132,7 +132,44 @@ No actives el modo autónomo hasta conocer bien el comportamiento del servidor y
 de la app. En ese modo las operaciones permitidas se ejecutan sin una confirmación
 individual en el panel.
 
-## 6. Uso diario
+## 6. Gestiona carpetas y guarda imágenes
+
+Las nuevas herramientas utilizan los mismos permisos y aprobaciones del panel:
+
+- **Crear carpeta** requiere **Creación**.
+- **Copiar** requiere **Lectura** y **Creación**.
+- **Mover, cortar/pegar o renombrar** requiere **Modificación** y **Creación**.
+- **Eliminar una carpeta** requiere **Eliminación** y la conserva en la papelera
+  local recuperable.
+- **Guardar una imagen de ChatGPT** requiere **Creación** y nunca sobrescribe un
+  archivo existente.
+
+Puedes pedir, por ejemplo:
+
+```text
+Usa Túnel Chat MCP para crear la carpeta "imagenes", copiar la carpeta
+"borradores" a "archivo/borradores" y renombrar "pendiente" como "revisado".
+Solicita mi aprobación local cuando corresponda.
+```
+
+Para guardar una imagen generada o adjunta en el chat:
+
+```text
+Usa guardar_imagen_chatgpt para guardar esta imagen como
+"imagenes/portada-chatgpt.png" dentro de la carpeta autorizada.
+```
+
+ChatGPT debe entregar la imagen a la herramienta como archivo. El conector declara
+el formato de entrada oficial `openai/fileParams`; admite PNG, JPEG y WebP de hasta
+20 MiB. Si la imagen solo aparece en un mensaje anterior y ChatGPT no la adjunta a
+la llamada, vuelve a seleccionar o adjuntar esa imagen y repite la petición. La
+referencia técnica está en la [documentación oficial de entradas de
+archivo](https://developers.openai.com/es-419/plugins/reference#file-parameters).
+
+Las operaciones recursivas están limitadas a 10.000 elementos y 512 MiB. No siguen
+enlaces simbólicos ni uniones y no permiten copiar una carpeta dentro de sí misma.
+
+## 7. Uso diario
 
 En cada sesión:
 
@@ -149,7 +186,7 @@ Cambiar permisos en el panel no requiere volver a crear la app. Si actualizas el
 código y cambian las herramientas MCP publicadas, reinicia el túnel y vuelve a
 abrir o actualizar la app en ChatGPT para que descubra el esquema vigente.
 
-## 7. Detener o desconectar
+## 8. Detener o desconectar
 
 Para detener temporalmente el acceso:
 
