@@ -2,6 +2,50 @@
 
 Este proyecto sigue [Versionado Semántico](https://semver.org/lang/es/).
 
+## [3.3.1] - 2026-09-19
+
+### Correcciones
+
+- Las imágenes y archivos descargados para una aprobación local se conservan
+  temporalmente en memoria durante un máximo de 30 minutos. Tras aprobar, ChatGPT
+  completa la escritura con `confirmar_guardado_chatgpt` y el identificador de la
+  solicitud, sin tener que reconstruir el enlace temporal del archivo en otro turno.
+- La confirmación diferida queda ligada al perfil, carpeta, destino, contenido y
+  SHA-256 aprobados, se consume una sola vez y nunca permite cambiar la ruta.
+
+### Seguridad
+
+- El almacenamiento temporal no toca el disco, admite como máximo cuatro
+  transferencias y 100 MiB en total, y libera los búferes al confirmar o caducar.
+- Se mantiene la compatibilidad con el flujo anterior cuando ChatGPT sí puede
+  repetir el descriptor completo del archivo.
+- `@modelcontextprotocol/sdk` se actualizó a 1.32.1 y las dependencias transitivas
+  vulnerables se renovaron a versiones corregidas y con firmas verificadas.
+
+## [3.3.0] - 2026-09-19
+
+### Funcionalidad
+
+- Nueva herramienta `guardar_archivo_chatgpt` para conservar como archivos nuevos
+  documentos, hojas de cálculo, presentaciones, PDF, texto, datos, ZIP, imágenes,
+  audio y vídeo que ChatGPT entregue mediante `openai/fileParams`.
+- Las descargas generales admiten hasta 50 MiB y reutilizan los permisos de
+  creación, la aprobación local o el modo autónomo, el registro y el confinamiento
+  a la carpeta autorizada. Se limitan a dos transferencias simultáneas.
+
+### Seguridad
+
+- La firma, el MIME y la extensión deben coincidir. Se bloquean descargas directas
+  de ejecutables, scripts, accesos directos, documentos con macros, HTML y SVG.
+- Los ZIP se conservan cerrados y nunca se descomprimen ni ejecutan. Todas las
+  descargas mantienen HTTPS, puerto 443, validación de cada redirección, bloqueo de
+  redes privadas y fijación de la dirección DNS validada.
+
+### Correcciones
+
+- La fijación DNS admite la forma `all: true` usada por Node.js 22, evitando el
+  error `Invalid IP address: undefined` sin rebajar la protección SSRF.
+
 ## [3.2.1] - 2026-09-19
 
 ### Corrección

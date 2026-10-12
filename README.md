@@ -18,7 +18,7 @@ Proyecto comunitario independiente; no es un producto oficial de OpenAI.
 - Crear y sobrescribir archivos con protección frente a cambios concurrentes.
 - Crear carpetas y copiar, mover, renombrar o eliminar árboles completos.
 - Mover archivos y carpetas eliminados a una papelera recuperable.
-- Guardar en el PC imágenes PNG, JPEG o WebP que ChatGPT entregue a la app.
+- Guardar en el PC imágenes y archivos generados o adjuntos en ChatGPT.
 - Crear y restaurar copias de seguridad verificadas.
 - Exigir una aprobación local para cada escritura o permitir un modo autónomo.
 - Activar permisos por 10, 30 o 60 minutos, o sin límite temporal.
@@ -45,10 +45,16 @@ No existe ninguna herramienta para ejecutar comandos, PowerShell o programas.
   calculan una huella del árbol y vuelven a verificarla antes y después de mover o
   copiar. Cualquier enlace, unión, archivo especial o cambio concurrente hace que
   la operación falle de forma cerrada.
-- Las imágenes de ChatGPT se crean como archivos nuevos, con un máximo de 20 MiB.
-  Solo se descargan por HTTPS, se comprueba su firma real y se bloquean puertos no
-  estándar, credenciales en URL, redirecciones excesivas y direcciones locales,
-  privadas o reservadas para evitar SSRF.
+- Las imágenes de ChatGPT se crean como archivos nuevos, con un máximo de 20 MiB;
+  los demás archivos admitidos tienen un máximo de 50 MiB. Solo se descargan por
+  HTTPS y se bloquean puertos no estándar, credenciales en URL, redirecciones
+  excesivas y direcciones locales, privadas o reservadas para evitar SSRF. Se
+  permiten como máximo dos descargas simultáneas para limitar el uso de memoria.
+- Se comprueban la firma real, el MIME y la extensión. Se admiten PDF, DOCX, XLSX,
+  PPTX, ODF, EPUB, ZIP, formatos de texto y datos habituales, imágenes y formatos
+  multimedia reconocidos. Se bloquean como descarga directa ejecutables, scripts,
+  accesos directos, documentos con macros, HTML y SVG. Los ZIP se guardan cerrados:
+  el túnel no los descomprime, inspecciona exhaustivamente ni ejecuta.
 - Las copias llevan perfil, huella de carpeta y SHA-256. Los metadatos se validan
   antes de listar, limpiar o restaurar.
 - La credencial del plano de control se protege con DPAPI, Keychain o Secret
@@ -214,7 +220,8 @@ npm test
 
 Las pruebas usan carpetas temporales y cubren permisos, lectura binaria, escapes de
 ruta, ADS, secretos, copias, papelera, árboles de carpetas, entradas de archivo de
-ChatGPT, bloqueo SSRF, aislamiento de perfiles y consumo simultáneo de aprobaciones.
+ChatGPT, firmas y tipos bloqueados, bloqueo SSRF, aislamiento de perfiles y consumo
+simultáneo de aprobaciones.
 
 ## Archivos principales
 
@@ -225,7 +232,9 @@ ChatGPT, bloqueo SSRF, aislamiento de perfiles y consumo simultáneo de aprobaci
 - `panel/`: interfaz adaptable ES/EN.
 - `server.mjs`: herramientas MCP y límites del espacio autorizado.
 - `workspace-tree.mjs`: huellas, límites y operaciones seguras con árboles.
-- `chatgpt-files.mjs`: descarga limitada y validación de imágenes de ChatGPT.
+- `chatgpt-files.mjs`: descarga limitada y validación de archivos de ChatGPT.
+- `staged-transfers.mjs`: retención temporal acotada para confirmar archivos ya
+  validados sin repetir su enlace de descarga en otro turno.
 - `mcp-launcher.mjs`: saneamiento del entorno antes de cargar el MCP.
 - `secure-store.mjs`: estado por perfil, bloqueo atómico y auditoría.
 - `harden-private-data.ps1`: restringe los ACL de los datos privados.

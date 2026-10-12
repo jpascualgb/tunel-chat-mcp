@@ -20,6 +20,17 @@
 > Actualización correctiva `v3.2.1`: el iniciador admite configuraciones antiguas
 > con UTF-8 BOM sin relajar la validación de su contenido. La credencial continúa
 > almacenada mediante DPAPI y nunca se incorpora al archivo JSON.
+>
+> Actualización del 19 de septiembre: la versión `v3.3.0` añade archivos generales
+> de ChatGPT con límite de 50 MiB, validación de firma/MIME/extensión y bloqueo de
+> ejecutables, scripts, contenido activo y macros. La decisión está documentada en
+> [ADR-004](docs/decisions/0004-general-chatgpt-file-downloads.md).
+>
+> Actualización correctiva `v3.3.1`: los archivos pendientes de aprobación se
+> conservan solo en memoria, con caducidad y límites globales, y se completan con
+> `confirmar_guardado_chatgpt`. La confirmación no acepta un archivo ni una ruta
+> nuevos y conserva el vínculo criptográfico con el contenido aprobado. Véase
+> [ADR-005](docs/decisions/0005-staged-chatgpt-file-approvals.md).
 
 ## Dictamen
 
@@ -105,8 +116,8 @@ prometer soporte de producción multiplataforma.
   contrato independiente validado con Zod y documentado en
   [docs/control-api-v1.md](docs/control-api-v1.md).
 - El MCP publica herramientas separadas para crear carpetas, copiar, mover o
-  renombrar y eliminar carpetas, además de una entrada de archivo oficial para
-  guardar imágenes de ChatGPT como archivos nuevos.
+  renombrar y eliminar carpetas, además de entradas de archivo oficiales para
+  guardar imágenes y otros archivos admitidos de ChatGPT como archivos nuevos.
 - La integración continua valida Node 22 en Windows, macOS y Linux, comprueba
   sintaxis, ejecuta regresiones, revisa dependencias y escanea secretos en el árbol
   y en todo el historial Git.
@@ -120,7 +131,7 @@ prometer soporte de producción multiplataforma.
   verificó firmas de registro para 94 paquetes y attestations para 9.
 - La suite completa superó las pruebas de entorno, plataformas y almacenes nativos,
   CLI, escáner de secretos, regresiones de seguridad, servidor MCP y panel/API.
-- 24 archivos JavaScript superaron la comprobación sintáctica.
+- 25 archivos JavaScript superaron la comprobación sintáctica.
 - Todos los scripts PowerShell superaron el analizador sintáctico.
 - El escáner local no encontró credenciales ni archivos sensibles en el estado
   actual ni en objetos alcanzables del historial Git.
@@ -144,6 +155,10 @@ prometer soporte de producción multiplataforma.
   escaneo de secretos y protección contra inserción de secretos. `main` exige pull
   request, historial lineal, conversaciones resueltas y CI verde en los tres
   sistemas; prohíbe force-push y borrado.
+- La versión `3.3.1` completó el 19 de septiembre de 2026 un ciclo real desde
+  ChatGPT en Windows con aprobación local y confirmación diferida para CSV, DOCX,
+  XLSX y PDF. Los cuatro archivos se verificaron después directamente en disco:
+  firma estructural válida, contenido marcador esperado y huella SHA-256.
 
 ## Riesgos residuales
 
@@ -172,9 +187,12 @@ prometer soporte de producción multiplataforma.
   sistema de archivos que no los admita, la operación falla de forma cerrada.
 - Calcular SHA-256 completo sigue consumiendo E/S cuando el llamador lo solicita;
   puede omitirse con `incluir_sha256=false` para lecturas exploratorias.
-- El contrato de entrada de imágenes y sus defensas de red tienen pruebas locales,
-  pero el traspaso real de una imagen generada desde ChatGPT debe verificarse tras
-  desplegar `v3.2.0` y actualizar la app conectada al túnel.
+- Los contratos de entrada de archivos, la confirmación diferida y sus defensas de
+  red tienen pruebas locales. CSV, DOCX, XLSX y PDF también tienen validación
+  funcional real desde ChatGPT en Windows; las demás familias admitidas deben
+  repetirse tras cada cambio relevante de versión o de esquema del complemento.
+- Los ZIP no se descomprimen ni ejecutan y no reciben un análisis antivirus
+  exhaustivo; el usuario debe tratarlos como contenido no confiable al extraerlos.
 
 ## Controles de publicación y mantenimiento
 

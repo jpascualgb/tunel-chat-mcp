@@ -57,6 +57,8 @@ try {
     "mover_elemento",
     "eliminar_carpeta",
     "guardar_imagen_chatgpt",
+    "guardar_archivo_chatgpt",
+    "confirmar_guardado_chatgpt",
     "listar_copias_seguridad",
   ]) {
     if (!tools.tools.some((tool) => tool.name === expectedTool)) {
@@ -70,6 +72,24 @@ try {
   assert.ok(imageSchema?.properties?.download_url && imageSchema?.properties?.file_id, "El archivo de ChatGPT debe declarar URL e identificador.");
   assert.ok(imageSchema?.properties?.mime_type && imageSchema?.properties?.file_name, "El archivo de ChatGPT debe declarar los metadatos opcionales oficiales.");
   assert.ok(imageSchema?.required?.includes("download_url") && imageSchema?.required?.includes("file_id"), "URL e identificador deben ser obligatorios.");
+
+  const fileTool = tools.tools.find((tool) => tool.name === "guardar_archivo_chatgpt");
+  assert.deepEqual(fileTool?._meta?.["openai/fileParams"], ["archivo"], "La herramienta general debe declarar el parametro de archivo de ChatGPT.");
+  const fileSchema = fileTool?.inputSchema?.properties?.archivo;
+  assert.ok(fileSchema?.properties?.download_url && fileSchema?.properties?.file_id, "El archivo general de ChatGPT debe declarar URL e identificador.");
+  assert.ok(fileSchema?.required?.includes("download_url") && fileSchema?.required?.includes("file_id"), "La herramienta general debe exigir URL e identificador.");
+
+  const confirmationTool = tools.tools.find((tool) => tool.name === "confirmar_guardado_chatgpt");
+  assert.deepEqual(
+    confirmationTool?.inputSchema?.required,
+    ["aprobacion_id"],
+    "La confirmacion diferida solo debe exigir el identificador de la aprobacion ya vinculada al archivo y destino.",
+  );
+  assert.equal(
+    confirmationTool?.inputSchema?.properties?.archivo,
+    undefined,
+    "La confirmacion diferida no debe pedir a ChatGPT que reconstruya el descriptor temporal del archivo.",
+  );
 
   const status = parseResult(await client.callTool({ name: "comprobar_estado_local", arguments: {} }));
   if (status.carpeta_trabajo !== temporaryRoot || status.permisos.delete !== true || status.credencial_plano_control_presente !== false) {
@@ -230,6 +250,16 @@ try {
     },
   });
   if (!insecureImageAttempt.isError) throw new Error("La descarga de imagen permitio una URL sin HTTPS.");
+
+  const privateFileAttempt = await client.callTool({
+    name: "guardar_archivo_chatgpt",
+    arguments: {
+      archivo: { download_url: "https://127.0.0.1/informe.pdf", file_id: "file_test", file_name: "informe.pdf" },
+      ruta_destino: "informe.pdf",
+      confirmar: true,
+    },
+  });
+  if (!privateFileAttempt.isError) throw new Error("La descarga general permitio un destino de red privado.");
 
   const externalContent = "contenido externo que MCP no debe leer ni cambiar";
   const externalFile = path.join(temporaryBase, "external.txt");
