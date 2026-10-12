@@ -132,7 +132,7 @@ No actives el modo autónomo hasta conocer bien el comportamiento del servidor y
 de la app. En ese modo las operaciones permitidas se ejecutan sin una confirmación
 individual en el panel.
 
-## 6. Gestiona carpetas y guarda imágenes
+## 6. Gestiona carpetas y guarda archivos de ChatGPT
 
 Las nuevas herramientas utilizan los mismos permisos y aprobaciones del panel:
 
@@ -143,6 +143,8 @@ Las nuevas herramientas utilizan los mismos permisos y aprobaciones del panel:
   local recuperable.
 - **Guardar una imagen de ChatGPT** requiere **Creación** y nunca sobrescribe un
   archivo existente.
+- **Guardar cualquier otro archivo admitido de ChatGPT** también requiere
+  **Creación** y nunca sobrescribe un archivo existente.
 
 Puedes pedir, por ejemplo:
 
@@ -165,6 +167,33 @@ el formato de entrada oficial `openai/fileParams`; admite PNG, JPEG y WebP de ha
 la llamada, vuelve a seleccionar o adjuntar esa imagen y repite la petición. La
 referencia técnica está en la [documentación oficial de entradas de
 archivo](https://developers.openai.com/es-419/plugins/reference#file-parameters).
+
+Si el panel pide aprobación, permite la solicitud y pide a ChatGPT que use
+`confirmar_guardado_chatgpt` con el `aprobacion_id` recibido. Esta segunda acción
+usa el archivo ya descargado y validado en memoria; no necesita volver a adjuntarlo
+ni permite cambiar su destino. La transferencia pendiente caduca a los 30 minutos
+y también se pierde si se reinicia el túnel.
+
+Para guardar un PDF, documento, hoja de cálculo, presentación, archivo de datos,
+ZIP, audio o vídeo generado o adjunto en el chat:
+
+```text
+Usa guardar_archivo_chatgpt para guardar este archivo como
+"documentos/informe.pdf" dentro de la carpeta autorizada. Crea primero la carpeta
+"documentos" si no existe.
+```
+
+La acción general admite hasta 50 MiB. Valida la firma, el MIME y la extensión, y
+bloquea ejecutables, scripts, accesos directos, documentos con macros, HTML y SVG.
+Los ZIP se copian sin abrir ni ejecutar su contenido. Si ChatGPT no adjunta el
+archivo a la llamada, vuelve a seleccionarlo o adjuntarlo y repite la petición.
+
+Ejemplo después de aprobar la solicitud en el panel:
+
+```text
+Usa confirmar_guardado_chatgpt con el aprobacion_id que devolvió la solicitud.
+No vuelvas a generar ni adjuntar el archivo.
+```
 
 Las operaciones recursivas están limitadas a 10.000 elementos y 512 MiB. No siguen
 enlaces simbólicos ni uniones y no permiten copiar una carpeta dentro de sí misma.

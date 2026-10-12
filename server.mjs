@@ -9,6 +9,7 @@ import { z } from "zod";
 import {
   appendActivity,
   consumeApproval,
+  decideApproval,
   effectivePermissions,
   isSensitiveRelativePath,
   pathsOverlap,
@@ -21,7 +22,8 @@ import {
 } from "./secure-store.mjs";
 import { assertSingleLinkFile, atomicRestoreFromFile, atomicWriteBuffer, atomicWriteJsonFile, bufferPreview, readBoundedPreview, sha256File } from "./safe-files.mjs";
 import { copyTreeToNewPath, inspectTree, moveTreeToNewPath } from "./workspace-tree.mjs";
-import { downloadChatGptImage } from "./chatgpt-files.mjs";
+import { downloadChatGptFile, downloadChatGptImage, maxChatGptFileBytes } from "./chatgpt-files.mjs";
+import { createStagedTransferStore } from "./staged-transfers.mjs";
 
 const projectRoot = path.dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = process.env.MCP_WORKSPACE_ROOT?.trim() || null;
@@ -38,6 +40,11 @@ const maxReadBytes = 2 * 1024 * 1024;
 const maxWriteBytes = 5 * 1024 * 1024;
 const maxTreeEntries = 10_000;
 const maxTreeBytes = 512 * 1024 * 1024;
+const stagedChatGptTransfers = createStagedTransferStore({
+  ttlMs: 30 * 60_000,
+  maxEntries: 4,
+  maxBytes: 2 * maxChatGptFileBytes,
+});
 
 let workspaceRealRoot = null;
 let workspaceInitializationError = null;
@@ -183,12 +190,13 @@ async function ensureTrashDirectory() {
   return realTrash;
 }
 
-function imageDestination(requestedPath, extension) {
+function downloadedFileDestination(requestedPath, preferredExtension, allowedExtensions) {
   validateRelativeInput(requestedPath);
   const currentExtension = path.extname(requestedPath).toLowerCase();
-  if (!currentExtension) return `${requestedPath}${extension}`;
-  const compatible = extension === ".jpg" ? [".jpg", ".jpeg"] : [extension];
-  if (!compatible.includes(currentExtension)) throw new Error(`La extension de destino debe ser ${compatible.join(" o ")}.`);
+  if (!currentExtension) return `${requestedPath}${preferredExtension}`;
+  if (!allowedExtensions.includes(currentExtension)) {
+    throw new Error(`La extension de destino debe ser ${allowedExtensions.join(" o ")}.`);
+  }
   return requestedPath;
 }
 
@@ -224,8 +232,17 @@ async function requireLocalApproval(settings, request, approvalId) {
   return { pending };
 }
 
-function approvalRequiredResult(request) {
-  const payload = { realizado: false, aprobacion_local_necesaria: true, solicitud_id: request.id, mensaje: "Aprueba o rechaza la operacion en el panel local. Si la apruebas, repite exactamente la llamada incluyendo aprobacion_id." };
+function approvalRequiredResult(request, options = {}) {
+  const mensaje = options.confirmationTool
+    ? `Aprueba o rechaza la operacion en el panel local. Si la apruebas, llama a ${options.confirmationTool} con solicitud_id como aprobacion_id; no vuelvas a enviar el archivo.`
+    : "Aprueba o rechaza la operacion en el panel local. Si la apruebas, repite exactamente la llamada incluyendo aprobacion_id.";
+  const payload = {
+    realizado: false,
+    aprobacion_local_necesaria: true,
+    solicitud_id: request.id,
+    ...(options.confirmationTool ? { herramienta_confirmacion: options.confirmationTool } : {}),
+    mensaje,
+  };
   return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }], structuredContent: payload };
 }
 
@@ -300,8 +317,90 @@ async function toolError(error, action = "tool_error", relativePath = ".") {
   return { isError: true, content: [{ type: "text", text: JSON.stringify({ error: message }, null, 2) }], structuredContent: { error: message } };
 }
 
-const server = new McpServer({ name: "pc-personal-seguro", version: "3.2.1" }, {
-  instructions: "Servidor local limitado a un perfil autorizado. Respeta permisos temporales, bloquea secretos y enlaces, crea copias y registra operaciones. Si exige aprobacion local, pide que se conceda en el panel y repite con aprobacion_id. Nunca ejecutes comandos.",
+async function saveChatGptDownload({ file, rutaDestino, confirmar, aprobacionId, download, operationLabel, auditAction, fallbackKind, resultField }) {
+  const settings = await requirePermission("create");
+  requireAutonomousConfirmation(settings, confirmar, operationLabel);
+  validateRelativeInput(rutaDestino);
+  const downloaded = await download(file);
+  const finalRequestedPath = downloadedFileDestination(rutaDestino, downloaded.extension, downloaded.allowedExtensions);
+  let destination = await resolveAuthorizedNewFile(finalRequestedPath, settings);
+  const relative = relativeForDisplay(destination);
+  const approvalRequest = {
+    action: auditAction, relativePath: relative, contentHash: downloaded.sha256,
+    preview: {
+      tipo: downloaded.kind || fallbackKind, mime_type: downloaded.mimeType, tamano_bytes: downloaded.size,
+      sha256: downloaded.sha256, destino: relative, archivo_origen: downloaded.sourceFileName,
+    },
+  };
+  const approval = await requireLocalApproval(settings, approvalRequest, aprobacionId);
+  if (approval.pending) {
+    try {
+      stagedChatGptTransfers.set(approval.pending.id, {
+        size: downloaded.size,
+        downloaded,
+        finalRequestedPath,
+        approvalRequest,
+        auditAction,
+        fallbackKind,
+        resultField,
+      });
+    } catch (error) {
+      await decideApproval(approvalsPath, approval.pending.id, "rejected", { profileId, workspaceFingerprint: workspaceId });
+      throw error;
+    }
+    return approvalRequiredResult(approval.pending, { confirmationTool: "confirmar_guardado_chatgpt" });
+  }
+  if (approval.approvalId) stagedChatGptTransfers.delete(approval.approvalId);
+  destination = await resolveAuthorizedNewFile(finalRequestedPath, settings);
+  await atomicWriteBuffer(destination, downloaded.buffer, { createOnly: true });
+  const payload = {
+    [resultField]: true, ruta_relativa: relative, tipo: downloaded.kind || fallbackKind, mime_type: downloaded.mimeType,
+    tamano_bytes: downloaded.size, sha256: downloaded.sha256, file_id_origen: downloaded.sourceFileId,
+    aprobacion: approval.autonomous ? "modo_autonomo" : approval.approvalId,
+  };
+  await audit(auditAction, relative, {
+    kind: payload.tipo, mimeType: downloaded.mimeType, bytes: downloaded.size, sha256: downloaded.sha256,
+    sourceFileId: downloaded.sourceFileId, approvalId: approval.approvalId, autonomous: approval.autonomous === true,
+  });
+  return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }], structuredContent: payload };
+}
+
+async function confirmStagedChatGptDownload(approvalId) {
+  const staged = stagedChatGptTransfers.get(approvalId);
+  if (!staged) throw new Error("La transferencia temporal no existe o ha caducado. Vuelve a enviar el archivo para solicitar una aprobacion nueva.");
+  const settings = await requirePermission("create");
+  let destination = await resolveAuthorizedNewFile(staged.finalRequestedPath, settings);
+  const relative = relativeForDisplay(destination);
+  if (relative !== staged.approvalRequest.relativePath) throw new Error("El destino autorizado cambio despues de solicitar la aprobacion.");
+  const approval = await requireLocalApproval({ ...settings, approvalRequired: true }, staged.approvalRequest, approvalId);
+  stagedChatGptTransfers.delete(approvalId);
+  destination = await resolveAuthorizedNewFile(staged.finalRequestedPath, settings);
+  await atomicWriteBuffer(destination, staged.downloaded.buffer, { createOnly: true });
+  const payload = {
+    [staged.resultField]: true,
+    ruta_relativa: relative,
+    tipo: staged.downloaded.kind || staged.fallbackKind,
+    mime_type: staged.downloaded.mimeType,
+    tamano_bytes: staged.downloaded.size,
+    sha256: staged.downloaded.sha256,
+    file_id_origen: staged.downloaded.sourceFileId,
+    aprobacion: approval.approvalId,
+  };
+  await audit(staged.auditAction, relative, {
+    kind: payload.tipo,
+    mimeType: staged.downloaded.mimeType,
+    bytes: staged.downloaded.size,
+    sha256: staged.downloaded.sha256,
+    sourceFileId: staged.downloaded.sourceFileId,
+    approvalId: approval.approvalId,
+    autonomous: false,
+    staged: true,
+  });
+  return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }], structuredContent: payload };
+}
+
+const server = new McpServer({ name: "pc-personal-seguro", version: "3.3.1" }, {
+  instructions: "Servidor local limitado a un perfil autorizado. Respeta permisos temporales, bloquea secretos y enlaces, crea copias y registra operaciones. Si guardar_archivo_chatgpt o guardar_imagen_chatgpt exige aprobacion local, pide que se conceda en el panel y despues usa confirmar_guardado_chatgpt con aprobacion_id, sin reenviar el archivo. Para las demas operaciones, repite con aprobacion_id. Nunca ejecutes comandos.",
 });
 
 server.registerTool("comprobar_estado_local", {
@@ -312,7 +411,7 @@ server.registerTool("comprobar_estado_local", {
   const backups = await listBackups();
   const approvals = await readApprovals(approvalsPath);
   const payload = {
-    conectado: true, servidor: "pc-personal-seguro", version: "3.2.1", sistema: os.platform(), arquitectura: os.arch(), node: process.version,
+    conectado: true, servidor: "pc-personal-seguro", version: "3.3.1", sistema: os.platform(), arquitectura: os.arch(), node: process.version,
     perfil_id: profileId, espacio_huella: workspaceId,
     credencial_plano_control_presente: Boolean(process.env.CONTROL_PLANE_API_KEY || process.env.OPENAI_API_KEY || process.env.OPENAI_ADMIN_KEY),
     carpeta_trabajo: workspaceRoot, permisos: effectivePermissions(settings), permisos_caducan: settings.permissionExpiresAt,
@@ -578,7 +677,7 @@ server.registerTool("eliminar_carpeta", {
 });
 
 server.registerTool("guardar_imagen_chatgpt", {
-  title: "Guardar imagen de ChatGPT", description: "Descarga de forma segura una imagen PNG, JPEG o WebP recibida por ChatGPT y la crea dentro de la carpeta autorizada.",
+  title: "Guardar imagen de ChatGPT", description: "Descarga y valida una imagen PNG, JPEG o WebP recibida por ChatGPT. Si solicita aprobacion local, completa despues la operacion con confirmar_guardado_chatgpt y el aprobacion_id devuelto.",
   inputSchema: {
     imagen: z.object({
       download_url: z.string().min(1).max(8192), file_id: z.string().min(1).max(1000),
@@ -590,28 +689,45 @@ server.registerTool("guardar_imagen_chatgpt", {
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
 }, async ({ imagen, ruta_destino, confirmar, aprobacion_id }) => {
   try {
-    const settings = await requirePermission("create");
-    requireAutonomousConfirmation(settings, confirmar, "guardado de imagen");
-    validateRelativeInput(ruta_destino);
-    const downloaded = await downloadChatGptImage(imagen);
-    const finalRequestedPath = imageDestination(ruta_destino, downloaded.extension);
-    let destination = await resolveAuthorizedNewFile(finalRequestedPath, settings);
-    const relative = relativeForDisplay(destination);
-    const approval = await requireLocalApproval(settings, {
-      action: "save_chatgpt_image", relativePath: relative, contentHash: downloaded.sha256,
-      preview: { tipo: "imagen", mime_type: downloaded.mimeType, tamano_bytes: downloaded.size, sha256: downloaded.sha256, destino: relative, archivo_origen: downloaded.sourceFileName },
-    }, aprobacion_id);
-    if (approval.pending) return approvalRequiredResult(approval.pending);
-    destination = await resolveAuthorizedNewFile(finalRequestedPath, settings);
-    await atomicWriteBuffer(destination, downloaded.buffer, { createOnly: true });
-    const payload = {
-      guardada: true, ruta_relativa: relative, mime_type: downloaded.mimeType,
-      tamano_bytes: downloaded.size, sha256: downloaded.sha256, file_id_origen: downloaded.sourceFileId,
-      aprobacion: approval.autonomous ? "modo_autonomo" : approval.approvalId,
-    };
-    await audit("save_chatgpt_image", relative, { mimeType: downloaded.mimeType, bytes: downloaded.size, sha256: downloaded.sha256, sourceFileId: downloaded.sourceFileId, approvalId: approval.approvalId, autonomous: approval.autonomous === true });
-    return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }], structuredContent: payload };
+    return await saveChatGptDownload({
+      file: imagen, rutaDestino: ruta_destino, confirmar, aprobacionId: aprobacion_id,
+      download: downloadChatGptImage, operationLabel: "guardado de imagen", auditAction: "save_chatgpt_image",
+      fallbackKind: "imagen", resultField: "guardada",
+    });
   } catch (error) { return toolError(error, "save_chatgpt_image_error", ruta_destino); }
+});
+
+server.registerTool("guardar_archivo_chatgpt", {
+  title: "Guardar archivo de ChatGPT",
+  description: "Descarga y valida un documento, hoja de calculo, presentacion, archivo de texto, ZIP o archivo multimedia recibido por ChatGPT. Si solicita aprobacion local, completa despues la operacion con confirmar_guardado_chatgpt y el aprobacion_id devuelto. Bloquea ejecutables, scripts, macros y contenido activo; los ZIP se conservan cerrados.",
+  inputSchema: {
+    archivo: z.object({
+      download_url: z.string().min(1).max(8192), file_id: z.string().min(1).max(1000),
+      mime_type: z.string().max(255).optional(), file_name: z.string().max(1000).optional(),
+    }).strict(),
+    ruta_destino: z.string().min(1).max(1000), confirmar: z.boolean().optional(), aprobacion_id: z.string().uuid().optional(),
+  },
+  _meta: { "openai/fileParams": ["archivo"] },
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+}, async ({ archivo, ruta_destino, confirmar, aprobacion_id }) => {
+  try {
+    return await saveChatGptDownload({
+      file: archivo, rutaDestino: ruta_destino, confirmar, aprobacionId: aprobacion_id,
+      download: downloadChatGptFile, operationLabel: "guardado de archivo", auditAction: "save_chatgpt_file",
+      fallbackKind: "archivo", resultField: "guardado",
+    });
+  } catch (error) { return toolError(error, "save_chatgpt_file_error", ruta_destino); }
+});
+
+server.registerTool("confirmar_guardado_chatgpt", {
+  title: "Confirmar guardado de ChatGPT",
+  description: "Completa un guardado de archivo o imagen que ya fue descargado, validado y aprobado en el panel local. Solo necesita el identificador de la aprobacion; no vuelve a descargar el archivo ni permite cambiar su destino.",
+  inputSchema: { aprobacion_id: z.string().uuid() },
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+}, async ({ aprobacion_id }) => {
+  try {
+    return await confirmStagedChatGptDownload(aprobacion_id);
+  } catch (error) { return toolError(error, "confirm_staged_chatgpt_download_error", "."); }
 });
 
 server.registerTool("listar_copias_seguridad", {
